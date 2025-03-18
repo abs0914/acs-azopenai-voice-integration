@@ -1,0 +1,26 @@
+### call via local
+POST http://localhost:8000/api/initiateOutboundCall
+Content-Type: application/json
+
+{
+    "phone_number": "<>",
+    "client_name": "John Smith",
+    "origin": "Seattle, USA",
+    "desired_destination": "Barcelona, UK",
+    "travel_dates": "May 2025",
+    "other_details": "['2 adults', '1 child', '1 infant']"
+}
+
+
+### call via web app
+POST https://<you-app-name>.azurewebsites.net/api/initiateOutboundCall
+Content-Type: application/json
+
+{
+    "phone_number": "<>",
+    "client_name": "John Smith",
+    "origin": "Seattle, USA",
+    "desired_destination": "Barcelona, UK",
+    "travel_dates": "May 2025",
+    "other_details": "['2 adults', '1 child', '1 infant']"
+}

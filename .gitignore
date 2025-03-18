@@ -1,0 +1,24 @@
+# avoid accidentally committing your local secrets
+*.env
+venv/
+.venv/
+__pycache__/
+**/__pycache__/**
+venv2/
+automation/.terraform/
+api/__pycache__/**
+api/__pycache__/
+.vscode/
+venv3/
+**.pyc
+api/src/__pycache__/**
+automation/.terraform.lock.hcl
+*.zip
+automation/api_zip.zip
+logs/app.log
+api/logs/app.log
+api/src/__pycache__/__init__.cpython-312.pyc
+api/src/__pycache__/__init__.cpython-312.pyc
+api/src/config/__pycache__/constants.cpython-312.pyc
+api/src/config/__pycache__/__init__.cpython-312.pyc
+api/src/services/__pycache__/cosmosdb_service.cpython-312.pyc
