@@ -15,6 +15,7 @@ def session_config(sys_msg: str):
     """Returns a random value from the predefined list."""
     values = ["alloy", "ash", "ballad", "coral", "echo", "sage", "shimmer", "verse"]
     ### for details on available param: https://platform.openai.com/docs/api-reference/realtime-sessions/create
+    ### not all voices are available on Azure OpenAI - YET
     SESSION_CONFIG={
         "input_audio_transcription": {
             "model": "whisper-1",
