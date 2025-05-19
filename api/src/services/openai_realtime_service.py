@@ -13,7 +13,7 @@ import random
 
 def session_config(sys_msg: str):
     """Returns a random value from the predefined list."""
-    values = ["alloy", "ash", "ballad", "coral", "echo", "fable", "onyx", "nova", "sage", "shimmer", "verse"]
+    values = ["alloy", "ash", "ballad", "coral", "echo", "sage", "shimmer", "verse"]
     ### for details on available param: https://platform.openai.com/docs/api-reference/realtime-sessions/create
     SESSION_CONFIG={
         "input_audio_transcription": {
