@@ -29,6 +29,7 @@ from src.services.cache_service import CacheService
 #from src.core.event_handlers import EventHandlers
 from src.services.cosmosdb_service import CosmosDBService
 from src.services.openai_realtime_service import OpenAIRealtimeService
+from src.services.ai_voice_service import AsyncAzureVoiceLiveService
 from src.models.models import OutboundCallPayloadModel
 from src.utils.logger import setup_logger
 
@@ -55,6 +56,12 @@ class CallAutomationApp:
             self.config, 
             self.cache_service
         )
+        
+        self.ai_voice_live_service = AsyncAzureVoiceLiveService(
+            config=self.config,
+            logger=self.logger,
+            cache=self.cache_service,
+        )
 
         # Initialize CosmosDBService
         self.cosmosdb_service = CosmosDBService(self.config)
@@ -64,15 +71,6 @@ class CallAutomationApp:
 
     def setup_routes(self):
         """Set up application routes"""
-        self.app.route("/")(
-            self.hello
-        )
-        self.app.route("/robots933456.txt")(
-            self.health_check
-        )
-        self.app.route("/api/callbacks", methods=["POST"])(
-            self.handle_callback
-        )
         self.app.route("/")(
             self.hello
         )
@@ -94,9 +92,7 @@ class CallAutomationApp:
         self.app.websocket("/ws/<call_id>")(
             self.ws
         )        
-        self.app.websocket("/ws/<call_id>")(
-            self.ws
-        )
+        
         
 
     async def hello(self):
@@ -356,7 +352,7 @@ class CallAutomationApp:
                 
                 elif event['type'] == "Microsoft.Communication.CallDisconnected":
                     #acs_client.get_call_connection(call_connection_id).hangup()
-                    await self.openai_realtime_service.cleanup_call_resources(call_id=call_connection_id)
+                    await self.ai_voice_live_service.cleanup_call_resources(call_id=call_connection_id)
                     self.logger.info(f"Received CallDisconnected event for connection id: {call_connection_id}")
                     
                 return Response(status=200)
@@ -372,12 +368,13 @@ class CallAutomationApp:
     async def ws(self, call_id:str):
         """WebSocket handler"""
         print(f"Client connected to WebSocket for call {call_id}")
-        await self.openai_realtime_service.init_incoming_websocket(call_id, websocket)
-        await self.openai_realtime_service.start_client(call_id)
+        await self.ai_voice_live_service.init_incoming_websocket(call_id, websocket)
+        await self.ai_voice_live_service.start_client(call_id)
         while websocket:
             try:
                 data = await websocket.receive()
-                await self.openai_realtime_service.acs_to_oai(
+                #print(f"DATAAAAAA: {data}")
+                await self.ai_voice_live_service.acs_to_oai(
                     call_id=call_id, 
                     stream_data=data
                 )

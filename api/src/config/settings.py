@@ -44,5 +44,14 @@ class Config:
     
     # Default phone numbers
     TARGET_CANDIDATE_PHONE_NUMBER = os.getenv("TARGET_PHONE_NUMBER") 
-    AGENT_PHONE_NUMBER = os.getenv("AGENT_PHONE_NUMBER")           
+    AGENT_PHONE_NUMBER = os.getenv("AGENT_PHONE_NUMBER")  
+    # AI Voice
+    AZURE_VOICE_LIVE_ENDPOINT = os.getenv("AZURE_VOICE_LIVE_ENDPOINT", "https://ai-admin-3454.cognitiveservices.azure.com/")
+    AZURE_VOICE_LIVE_DEPLOYMENT = os.getenv("AZURE_VOICE_LIVE_DEPLOYMENT", "gpt-4o")
+    VOICE_LIVE_MODEL = os.getenv("VOICE_LIVE_MODEL", "gpt-4o")
+    AZURE_VOICE_LIVE_API_VERSION = os.getenv("AZURE_VOICE_LIVE_API_VERSION", "2025-05-01-preview")
+    AZURE_VOICE_LIVE_API_KEY = os.getenv("AZURE_VOICE_LIVE_API_KEY")
+    
+    # security (partially implemented)
+    SHOULD_USE_KEYS:bool = os.getenv("SHOULD_USE_KEYS", False)
     
