@@ -2,6 +2,7 @@ from __future__ import annotations
 import asyncio
 from openai import AsyncAzureOpenAI
 from azure.core.credentials import AzureKeyCredential
+from quart import Websocket
 
 from src.config.constants import OpenAIPrompts
 from src.config.settings import Config
@@ -32,6 +33,8 @@ from websockets.asyncio.client import ClientConnection as AsyncWebsocket
 from websockets.asyncio.client import HeadersLike
 from websockets.typing import Data
 from websockets.exceptions import WebSocketException
+
+from src.interfaces.ai_voice_base import AIVoiceBase
 ##
 
 ## TODO: Implement use of interface for AI Voice Service
@@ -41,14 +44,14 @@ def session_config(sys_msg: str):
             "type": "session.update",
             "session": {
                 "turn_detection": {
-                    "type": "azure_semantic_vad",
+                    "type": "server_vad",
                     "threshold": 0.5,
                     "prefix_padding_ms": 200,
                     "silence_duration_ms": 200,
                     "remove_filler_words": False,
                     "end_of_utterance_detection": {
                         "model": "semantic_detection_v1",
-                        "threshold": 0.1,
+                        "threshold": 0.01,
                         "timeout": 4,
                     },
                 },
@@ -71,7 +74,7 @@ def session_config(sys_msg: str):
     return json.dumps(session_update)
     
 
-class AsyncAzureVoiceLiveService:
+class AsyncAzureVoiceLiveService(AIVoiceBase):
     def __init__(self, config:Config, cache: CacheService, logger: logging.Logger):
         self.config = config
         self.cache_service = cache
@@ -83,38 +86,11 @@ class AsyncAzureVoiceLiveService:
     
     active_websocket = None
     
-    async def _get_system_message_persona_from_payload(
-        self, 
-        call_id:str,
-        promtps:OpenAIPrompts = OpenAIPrompts, 
-        persona:str='default'
-    ):
-        """Method to add logic to configure agent persona leveraging the system prompt and candidate and job cached data"""
-        ## Add your logic ##
-        acs_call_id = await self.cache_service.get(f'acs_call_id:{call_id}')
-        req_payload = await self.cache_service.get(f'payload_dict:{acs_call_id}')
-        sys_msg = self._construct_system_message(
-            promtps.system_message_dict.get(persona), 
-            [
-                "\n## ADDITIONAL INFORMATION\n" + json.dumps(req_payload)
-            ]
-        )
-        print(f"\n\n{sys_msg}\n\n")
-        return sys_msg
     
-    def _construct_system_message(
-        self,
-        sys_msg:str, 
-        str_list_to_append: list[str]=None
-    )-> str:
-        """Method to construct the system message based on the standard plus customizations"""
-        if str_list_to_append:
-            return f"{sys_msg} {' '.join(str_list_to_append)}"
-        return sys_msg
     
     async def start_client(self, call_id: str):
         """Method to start the client"""
-        sys_msg = await self._get_system_message_persona_from_payload(call_id=call_id)
+        sys_msg = await self._get_system_message_persona_from_payload(call_id=call_id, persona='joyce')
         try:
             client = AsyncAzureVoiceLive(
                 azure_endpoint=self.config.AZURE_VOICE_LIVE_ENDPOINT,
@@ -143,7 +119,7 @@ class AsyncAzureVoiceLiveService:
             self.logger.error(f"Failed to start client for call {call_id}: {e}")
             raise Exception(f"Failed to connect to the Voice Live API: {e}")
         
-    
+        
     async def audio_to_aoi(self, call_id: str, audio_data: str) -> None:
         connection: AsyncVoiceLiveConnection = self.connections.get(call_id)
         await connection.send(message=audio_data)
@@ -163,7 +139,7 @@ class AsyncAzureVoiceLiveService:
                     self.logger.warning("Received empty event, skipping...")
                     continue
                 event = json.loads(raw_event)
-                print(f"Received event:", {event.get("type")})
+                #print(f"Received event:", {event.get("type")})
                 
                 match event.get("type"):
                     
@@ -291,7 +267,7 @@ class AsyncAzureVoiceLiveService:
             await connection.close()
         
         
-    async def init_incoming_websocket(self, call_id:str, socket):
+    async def init_incoming_websocket(self, call_id:str, socket:Websocket):
         #global active_websocket
         self.active_websockets[call_id] = socket
 

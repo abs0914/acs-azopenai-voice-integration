@@ -32,6 +32,7 @@ from src.services.openai_realtime_service import OpenAIRealtimeService
 from src.services.ai_voice_service import AsyncAzureVoiceLiveService
 from src.models.models import OutboundCallPayloadModel
 from src.utils.logger import setup_logger
+from src.interfaces.ai_voice_base import AIVoiceBase
 
 
 class CallAutomationApp:
@@ -52,16 +53,18 @@ class CallAutomationApp:
             self.config.ACS_CONNECTION_STRING
         )
         
-        self.openai_realtime_service = OpenAIRealtimeService(
-            self.config, 
-            self.cache_service
-        )
-        
-        self.ai_voice_live_service = AsyncAzureVoiceLiveService(
+    
+        self.ai_voice_service: AIVoiceBase = AsyncAzureVoiceLiveService(
             config=self.config,
             logger=self.logger,
             cache=self.cache_service,
         )
+        
+        #self.openai_realtime_service = OpenAIRealtimeService(
+        #    self.config, 
+        #    self.cache_service, 
+        #    self.logger
+        #)
 
         # Initialize CosmosDBService
         self.cosmosdb_service = CosmosDBService(self.config)
@@ -352,7 +355,7 @@ class CallAutomationApp:
                 
                 elif event['type'] == "Microsoft.Communication.CallDisconnected":
                     #acs_client.get_call_connection(call_connection_id).hangup()
-                    await self.ai_voice_live_service.cleanup_call_resources(call_id=call_connection_id)
+                    await self.ai_voice_service.cleanup_call_resources(call_id=call_connection_id)
                     self.logger.info(f"Received CallDisconnected event for connection id: {call_connection_id}")
                     
                 return Response(status=200)
@@ -368,13 +371,12 @@ class CallAutomationApp:
     async def ws(self, call_id:str):
         """WebSocket handler"""
         print(f"Client connected to WebSocket for call {call_id}")
-        await self.ai_voice_live_service.init_incoming_websocket(call_id, websocket)
-        await self.ai_voice_live_service.start_client(call_id)
+        await self.ai_voice_service.init_incoming_websocket(call_id, websocket)
+        await self.ai_voice_service.start_client(call_id)
         while websocket:
             try:
                 data = await websocket.receive()
-                #print(f"DATAAAAAA: {data}")
-                await self.ai_voice_live_service.acs_to_oai(
+                await self.ai_voice_service.acs_to_oai(
                     call_id=call_id, 
                     stream_data=data
                 )

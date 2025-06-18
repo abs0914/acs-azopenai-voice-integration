@@ -1,6 +1,7 @@
 import asyncio
 import json
 from azure.core.credentials import AzureKeyCredential
+import logging
 
 from openai import AsyncAzureOpenAI
 from openai.types.beta.realtime.session import Session
@@ -9,6 +10,7 @@ from openai.resources.beta.realtime.realtime import AsyncRealtimeConnection, Asy
 from src.config.settings import Config
 from src.services.cache_service import CacheService
 from src.config.constants import OpenAIPrompts
+from src.interfaces.ai_voice_base import AIVoiceBase
 import random
 
 def session_config(sys_msg: str):
@@ -25,13 +27,16 @@ def session_config(sys_msg: str):
             "type": "server_vad"
         },
         "instructions": sys_msg,
-        "voice": random.choice(values),
+        "voice": "marilyn", # random.choice(values),
         "modalities": ["text", "audio"] ## required to solicit the initial welcome message
     }
+    print()
+    print(f"Session Config: {SESSION_CONFIG}")
+    print()
     return SESSION_CONFIG
 
-class OpenAIRealtimeService:
-    def __init__(self, config:Config, cache: CacheService):
+class OpenAIRealtimeService(AIVoiceBase):
+    def __init__(self, config:Config, cache: CacheService, logger:logging.Logger):
         self.config = config
         self.cache_service = cache
         self.clients = {}
@@ -41,34 +46,7 @@ class OpenAIRealtimeService:
     
     active_websocket = None
 
-    async def _get_system_message_persona_from_payload(
-        self, 
-        call_id:str,
-        promtps:OpenAIPrompts = OpenAIPrompts, 
-        persona:str='default'
-    ):
-        """Method to add logic to configure agent persona leveraging the system prompt and candidate and job cached data"""
-        ## Add your logic ##
-        acs_call_id = await self.cache_service.get(f'acs_call_id:{call_id}')
-        req_payload = await self.cache_service.get(f'payload_dict:{acs_call_id}')
-        sys_msg = self._construct_system_message(
-            promtps.system_message_dict.get(persona), 
-            [
-                "\n## ADDITIONAL INFORMATION\n" + json.dumps(req_payload)
-            ]
-        )
-        print(f"\n\n{sys_msg}\n\n")
-        return sys_msg
-    
-    def _construct_system_message(
-        self,
-        sys_msg:str, 
-        str_list_to_append: list[str]=None
-    )-> str:
-        """Method to construct the system message based on the standard plus customizations"""
-        if str_list_to_append:
-            return f"{sys_msg} {' '.join(str_list_to_append)}"
-        return sys_msg
+   
 
 #start_conversation > start_client
     async def start_client(self, call_id: str):
@@ -80,11 +58,11 @@ class OpenAIRealtimeService:
         """
         sys_msg = await self._get_system_message_persona_from_payload(call_id)
         client = AsyncAzureOpenAI(
-                azure_endpoint=self.config.AZURE_OPENAI_SERVICE_ENDPOINT,
-                azure_deployment=self.config.AZURE_OPENAI_DEPLOYMENT_MODEL_NAME,
-                api_key=self.config.AZURE_OPENAI_SERVICE_KEY, 
-                api_version="2024-10-01-preview",
-            )
+            azure_endpoint=self.config.AZURE_OPENAI_SERVICE_ENDPOINT,
+            azure_deployment=self.config.AZURE_OPENAI_DEPLOYMENT_MODEL_NAME,
+            api_key=self.config.AZURE_OPENAI_SERVICE_KEY, 
+            api_version=self.config.AZURE_OPENAI_SERVICE_API_VERSION or "2024-10-01-preview",
+        )
         connection_manager = client.beta.realtime.connect(
                     model=self.config.AZURE_OPENAI_DEPLOYMENT_MODEL_NAME,
         )
@@ -97,7 +75,7 @@ class OpenAIRealtimeService:
         await active_connection.response.create()
         
         # maybe start by sending welcome message
-        asyncio.create_task(self.receive_oai_messages(call_id=call_id))
+        asyncio.create_task(self.receive_audio_and_playback(call_id=call_id))
 
 #send_audio_to_external_ai > audio_to_oai             
     async def audio_to_oai(self, call_id:str, audioData: str):
@@ -105,7 +83,7 @@ class OpenAIRealtimeService:
         await connection.input_audio_buffer.append(audio=audioData)
 
 #receive_messages > receive_oai_messages
-    async def receive_oai_messages(self, call_id: str):
+    async def receive_audio_and_playback(self, call_id: str):
                 connection = self.connections.get(call_id)
                 async for event in connection:
                     if event is None:
@@ -160,7 +138,7 @@ class OpenAIRealtimeService:
 #receive_audio_for_outbound > oai_to_acs
     async def oai_to_acs(self, call_id:str, data):
         try:
-            data = {
+            payload = {
                 "Kind": "AudioData",
                 "AudioData": {
                         "Data":  data
@@ -169,11 +147,11 @@ class OpenAIRealtimeService:
             }
 
             # Serialize the server streaming data
-            serialized_data = json.dumps(data)
+            serialized_data = json.dumps(payload)
             await self.send_message(call_id, serialized_data)
             
         except Exception as e:
-            print(e)
+            self.logger.error("Error sending audio data to ACS: %s", e)
 
 # stop oai talking when detecting the user talking
     async def stop_audio(self, call_id: str):
