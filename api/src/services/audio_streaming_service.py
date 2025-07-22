@@ -8,13 +8,7 @@ import json
 import base64
 import uuid
 from typing import Dict, Any, Optional, Callable
-from azure.communication.callautomation import (
-    CallAutomationClient,
-    MediaStreamingOptions,
-    MediaStreamingContent,
-    MediaStreamingAudioChannel,
-    AudioFormat
-)
+from azure.communication.callautomation import CallAutomationClient
 
 from ..config.settings import Config
 from ..services.voice_live_service import VoiceLiveService
@@ -31,67 +25,45 @@ class AudioStreamingService:
         self.active_streams: Dict[str, Dict[str, Any]] = {}
         
     async def start_bidirectional_streaming(self, call_connection_id: str, websocket_uri: str) -> bool:
-        """Start bidirectional audio streaming for a call"""
+        """Start Voice Live session for a call (simplified without bidirectional streaming)"""
         try:
-            # Configure media streaming options for bidirectional audio
-            media_streaming_options = MediaStreamingOptions(
-                transport_url=websocket_uri,
-                transport_type="websocket",
-                content_type=MediaStreamingContent.AUDIO,
-                audio_channel_type=MediaStreamingAudioChannel.MIXED,
-                start_media_streaming=True,
-                enable_bidirectional=True,
-                audio_format=AudioFormat.PCM_24_KHZ_MONO
-            )
-            
-            # Start media streaming with ACS
-            call_connection = self.call_automation_client.get_call_connection(call_connection_id)
-            streaming_result = await call_connection.start_media_streaming(media_streaming_options)
-            
-            if streaming_result:
-                self.logger.info(f"Started bidirectional audio streaming for call {call_connection_id}")
-                
-                # Create Voice Live session
-                voice_live_connection = await self.voice_live_service.create_voice_live_session(call_connection_id)
-                
-                # Store streaming info
-                self.active_streams[call_connection_id] = {
-                    "voice_live_connection": voice_live_connection,
-                    "streaming_active": True,
-                    "websocket_uri": websocket_uri
-                }
-                
-                # Start processing Voice Live events
-                asyncio.create_task(self._process_voice_live_events(call_connection_id))
-                
-                return True
-            else:
-                self.logger.error(f"Failed to start media streaming for call {call_connection_id}")
-                return False
-                
+            self.logger.info(f"Starting Voice Live session for call {call_connection_id}")
+
+            # Create Voice Live session
+            voice_live_connection = await self.voice_live_service.create_voice_live_session(call_connection_id)
+
+            # Store streaming info
+            self.active_streams[call_connection_id] = {
+                "voice_live_connection": voice_live_connection,
+                "streaming_active": True,
+                "websocket_uri": websocket_uri
+            }
+
+            # Start processing Voice Live events
+            asyncio.create_task(self._process_voice_live_events(call_connection_id))
+
+            self.logger.info(f"Voice Live session started for call {call_connection_id}")
+            return True
+
         except Exception as e:
-            self.logger.error(f"Error starting bidirectional streaming: {e}")
+            self.logger.error(f"Error starting Voice Live session: {e}")
             return False
     
     async def stop_bidirectional_streaming(self, call_connection_id: str):
-        """Stop bidirectional audio streaming for a call"""
+        """Stop Voice Live session for a call"""
         try:
             if call_connection_id in self.active_streams:
-                # Stop media streaming with ACS
-                call_connection = self.call_automation_client.get_call_connection(call_connection_id)
-                await call_connection.stop_media_streaming()
-                
                 # Close Voice Live session
                 await self.voice_live_service.close_voice_live_session(call_connection_id)
-                
+
                 # Clean up
                 self.active_streams[call_connection_id]["streaming_active"] = False
                 del self.active_streams[call_connection_id]
-                
-                self.logger.info(f"Stopped bidirectional streaming for call {call_connection_id}")
-                
+
+                self.logger.info(f"Stopped Voice Live session for call {call_connection_id}")
+
         except Exception as e:
-            self.logger.error(f"Error stopping bidirectional streaming: {e}")
+            self.logger.error(f"Error stopping Voice Live session: {e}")
     
     async def handle_incoming_audio(self, call_connection_id: str, audio_data: bytes):
         """Handle incoming audio from ACS call and forward to Voice Live API"""

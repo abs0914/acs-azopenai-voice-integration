@@ -12,11 +12,9 @@ import logging
 import numpy as np
 from typing import Dict, Union, Literal, Optional, Set, Callable, Awaitable, Any
 from typing_extensions import AsyncIterator, TypedDict, Required
-from websockets.asyncio.client import connect as ws_connect
-from websockets.asyncio.client import ClientConnection as AsyncWebsocket
-from websockets.asyncio.client import HeadersLike
-from websockets.typing import Data
+import websockets
 from websockets.exceptions import WebSocketException
+from typing import Union
 from azure.identity import DefaultAzureCredential
 from azure.core.credentials_async import AsyncTokenCredential
 
@@ -85,9 +83,9 @@ class AsyncVoiceLiveSessionResource:
 
 class AsyncVoiceLiveConnection:
     session: AsyncVoiceLiveSessionResource
-    _connection: AsyncWebsocket
+    _connection: Any
 
-    def __init__(self, url: str, additional_headers: HeadersLike) -> None:
+    def __init__(self, url: str, additional_headers: Dict[str, str]) -> None:
         self._url = url
         self._additional_headers = additional_headers
         self._connection = None
@@ -95,7 +93,7 @@ class AsyncVoiceLiveConnection:
 
     async def __aenter__(self) -> 'AsyncVoiceLiveConnection':
         try:
-            self._connection = await ws_connect(self._url, additional_headers=self._additional_headers)
+            self._connection = await websockets.connect(self._url, extra_headers=self._additional_headers)
             logger.info(f"Connected to Azure Voice Live API: {self._url}")
         except WebSocketException as e:
             logger.error(f"Failed to establish WebSocket connection: {e}")
@@ -111,17 +109,20 @@ class AsyncVoiceLiveConnection:
     enter = __aenter__
     close = __aexit__
 
-    async def __aiter__(self) -> AsyncIterator[Data]:
+    async def __aiter__(self) -> AsyncIterator[str]:
         async for data in self._connection:
             yield data
 
-    async def recv(self) -> Data:
-        return await self._connection.recv()
-    
-    async def recv_bytes(self) -> bytes:
+    async def recv(self) -> str:
         return await self._connection.recv()
 
-    async def send(self, message: Data) -> None:
+    async def recv_bytes(self) -> bytes:
+        data = await self._connection.recv()
+        if isinstance(data, str):
+            return data.encode('utf-8')
+        return data
+
+    async def send(self, message: Union[str, bytes]) -> None:
         await self._connection.send(message)
 
 class AsyncAzureVoiceLive:
