@@ -179,12 +179,7 @@ class AudioStreamingService:
                         "threshold": 0.3,
                         "prefix_padding_ms": 200,
                         "silence_duration_ms": 200,
-                        "remove_filler_words": False,
-                        "end_of_utterance_detection": {
-                            "model": "semantic_detection_v1",
-                            "threshold": 0.1,
-                            "timeout": 4,
-                        },
+                        "remove_filler_words": False
                     },
                     "input_audio_noise_reduction": {"type": "azure_deep_noise_suppression"},
                     "input_audio_echo_cancellation": {"type": "server_echo_cancellation"},
@@ -195,9 +190,8 @@ class AudioStreamingService:
                     },
                 }
                 
-                # Add assistant configuration if provided
-                if assistant_id or self.config.VIDA_VOICE_BOT_ASSISTANT_ID:
-                    session_config["assistant_id"] = assistant_id or self.config.VIDA_VOICE_BOT_ASSISTANT_ID
+                # Note: assistant_id is not supported in Voice Live API session configuration
+                # The vida-voice-bot agent integration would be handled differently
                 
                 await voice_live_connection.session.update(session=session_config)
                 self.logger.info(f"Configured Voice Live session for call {call_connection_id}")

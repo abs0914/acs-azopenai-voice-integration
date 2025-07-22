@@ -87,6 +87,18 @@ class CallAutomationApp:
         self.app.route("/api/mediaStreaming/<call_connection_id>", methods=["POST"])(
             self.handle_media_streaming
         )
+
+        # Test endpoint for Voice Live connection
+        self.app.route("/api/testVoiceLive", methods=["GET"])(
+            self.test_voice_live_connection
+        )
+
+        # Test endpoint for Voice Live call simulation
+        self.app.route("/api/testVoiceLiveCall", methods=["POST"])(
+            self.test_voice_live_call_simulation
+        )
+
+
         
 
     async def hello(self):
@@ -475,6 +487,148 @@ class CallAutomationApp:
             self.logger.error(f"Error handling media streaming: {str(e)}", exc_info=True)
             return Response(
                 response=json.dumps({"error": str(e)}),
+                status=StatusCodes.SERVER_ERROR,
+                headers={"Content-Type": "application/json"}
+            )
+
+    async def test_voice_live_connection(self):
+        """Test Voice Live API connection"""
+        try:
+            # Test creating a Voice Live session
+            test_call_id = "test-connection-" + str(uuid.uuid4())
+
+            self.logger.info(f"Testing Voice Live connection with call ID: {test_call_id}")
+
+            # Try to create a Voice Live session
+            voice_live_connection = await self.voice_live_service.create_voice_live_session(test_call_id)
+
+            if voice_live_connection:
+                # Close the test session
+                await self.voice_live_service.close_voice_live_session(test_call_id)
+
+                return Response(
+                    response=json.dumps({
+                        "status": "success",
+                        "message": "Voice Live API connection successful",
+                        "endpoint": self.config.AZURE_VOICE_LIVE_ENDPOINT,
+                        "deployment": self.config.AZURE_VOICE_LIVE_DEPLOYMENT,
+                        "assistant_id": self.config.VIDA_VOICE_BOT_ASSISTANT_ID
+                    }),
+                    status=StatusCodes.OK,
+                    headers={"Content-Type": "application/json"}
+                )
+            else:
+                return Response(
+                    response=json.dumps({
+                        "status": "error",
+                        "message": "Failed to create Voice Live session"
+                    }),
+                    status=StatusCodes.SERVER_ERROR,
+                    headers={"Content-Type": "application/json"}
+                )
+
+        except Exception as e:
+            self.logger.error(f"Error testing Voice Live connection: {str(e)}", exc_info=True)
+            return Response(
+                response=json.dumps({
+                    "status": "error",
+                    "message": f"Voice Live connection test failed: {str(e)}"
+                }),
+                status=StatusCodes.SERVER_ERROR,
+                headers={"Content-Type": "application/json"}
+            )
+
+    async def test_voice_live_call_simulation(self):
+        """Simulate a Voice Live call integration test"""
+        try:
+            request_data = await request.get_json()
+            test_phone_number = request_data.get("phone_number", "+1234567890")
+            client_name = request_data.get("client_name", "Test User")
+
+            # Simulate a call connection ID
+            test_call_id = f"test-call-{uuid.uuid4()}"
+
+            self.logger.info(f"Simulating Voice Live call for {client_name} ({test_phone_number})")
+
+            # Simulate the call connected flow
+            await self.cache_service.set(f"call_active:{test_call_id}", True)
+            await self.cache_service.set(f"current_session_id:{test_call_id}", test_call_id)
+            await self.cache_service.set(f"current_call_id:{test_call_id}", test_call_id)
+            await self.cache_service.set(f"participant_id:{test_call_id}", test_phone_number)
+            await self.cache_service.set(f"payload_dict:{test_call_id}", {
+                "client_name": client_name,
+                "phone_number": test_phone_number,
+                "test_mode": True
+            })
+
+            # Start Voice Live session (simulated)
+            websocket_uri = f"wss://test-websocket-endpoint/{test_call_id}"
+
+            streaming_started = await self.audio_streaming_service.start_bidirectional_streaming(
+                test_call_id,
+                websocket_uri
+            )
+
+            if streaming_started:
+                # Configure Voice Live session
+                await self.audio_streaming_service.configure_voice_live_session(
+                    test_call_id,
+                    assistant_id=None  # Will use default VIDA_VOICE_BOT_ASSISTANT_ID
+                )
+
+                # Simulate some conversation context
+                hello_message = f"Hello {client_name}! This is a test of the Voice Live integration. How can I help you today?"
+
+                await self.cache_service.set(f"conversation_context:{test_call_id}", {
+                    "payload": {"client_name": client_name, "phone_number": test_phone_number},
+                    "initial_greeting": hello_message,
+                    "participant_id": test_phone_number,
+                    "test_mode": True
+                })
+
+                # Clean up after a short delay (simulate call end)
+                async def cleanup_test_call():
+                    await asyncio.sleep(5)  # Wait 5 seconds
+                    await self.audio_streaming_service.stop_bidirectional_streaming(test_call_id)
+                    await self.cache_service.delete(f"call_active:{test_call_id}")
+                    await self.cache_service.delete(f"current_session_id:{test_call_id}")
+                    await self.cache_service.delete(f"current_call_id:{test_call_id}")
+                    await self.cache_service.delete(f"conversation_context:{test_call_id}")
+                    self.logger.info(f"Test call {test_call_id} cleaned up")
+
+                # Start cleanup task
+                asyncio.create_task(cleanup_test_call())
+
+                return Response(
+                    response=json.dumps({
+                        "status": "success",
+                        "message": "Voice Live call simulation successful",
+                        "call_id": test_call_id,
+                        "client_name": client_name,
+                        "phone_number": test_phone_number,
+                        "voice_live_session": "active",
+                        "greeting": hello_message
+                    }),
+                    status=StatusCodes.OK,
+                    headers={"Content-Type": "application/json"}
+                )
+            else:
+                return Response(
+                    response=json.dumps({
+                        "status": "error",
+                        "message": "Failed to start Voice Live session"
+                    }),
+                    status=StatusCodes.SERVER_ERROR,
+                    headers={"Content-Type": "application/json"}
+                )
+
+        except Exception as e:
+            self.logger.error(f"Error in Voice Live call simulation: {str(e)}", exc_info=True)
+            return Response(
+                response=json.dumps({
+                    "status": "error",
+                    "message": f"Voice Live call simulation failed: {str(e)}"
+                }),
                 status=StatusCodes.SERVER_ERROR,
                 headers={"Content-Type": "application/json"}
             )

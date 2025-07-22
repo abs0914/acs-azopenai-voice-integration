@@ -221,12 +221,7 @@ class VoiceLiveService:
                         "threshold": 0.3,
                         "prefix_padding_ms": 200,
                         "silence_duration_ms": 200,
-                        "remove_filler_words": False,
-                        "end_of_utterance_detection": {
-                            "model": "semantic_detection_v1",
-                            "threshold": 0.1,
-                            "timeout": 4,
-                        },
+                        "remove_filler_words": False
                     },
                     "input_audio_noise_reduction": {"type": "azure_deep_noise_suppression"},
                     "input_audio_echo_cancellation": {"type": "server_echo_cancellation"},
