@@ -63,7 +63,7 @@ module "api" {
     APPLICATIONINSIGHTS_CONNECTION_STRING = module.applicationinsights.APPLICATIONINSIGHTS_CONNECTION_STRING
     #ACS
     ACS_CONNECTION_STRING      = data.azurerm_communication_service.communication_service.primary_connection_string
-    COGNITIVE_SERVICE_ENDPOINT = azurerm_cognitive_account.CognitiveServices.endpoint
+    COGNITIVE_SERVICE_ENDPOINT = data.azurerm_cognitive_account.CognitiveServices.endpoint
     AGENT_PHONE_NUMBER         = local.agent_phone_number
     VOICE_NAME                 = "en-US-AvaMultilingualNeural"
     # Azure OpenAI
@@ -71,6 +71,7 @@ module "api" {
     AZURE_OPENAI_SERVICE_ENDPOINT      = azurerm_cognitive_account.openai.endpoint
     AZURE_OPENAI_DEPLOYMENT_MODEL_NAME = azurerm_cognitive_deployment.openai_deployments["gpt-4o"].model[0].name
     AZURE_OPENAI_DEPLOYMENT_MODEL      = azurerm_cognitive_deployment.openai_deployments["gpt-4o"].model[0].name
+    OPENAI_ASSISTANT_ID                = "asst_dEODj1Hu6Z68Ebggl13DAHPv"
     # Application Settings
     CALLBACK_URI_HOST   = "https://${local.name_prefix}-api-${random_string.unique.result}.azurewebsites.net"
     CALLBACK_EVENTS_URI = "https://${local.name_prefix}-api-${random_string.unique.result}.azurewebsites.net/api/callbacks"
@@ -132,7 +133,7 @@ resource "azurerm_role_assignment" "openai_contributor" {
 
 resource "azurerm_role_assignment" "multi_cognitive_services_contributor" {
   depends_on                       = [module.api]
-  scope                            = azurerm_cognitive_account.CognitiveServices.id
+  scope                            = data.azurerm_cognitive_account.CognitiveServices.id
   role_definition_name             = "Cognitive Services Contributor"
   principal_id                     = module.api.IDENTITY_PRINCIPAL_ID
   skip_service_principal_aad_check = true
@@ -141,7 +142,7 @@ resource "azurerm_role_assignment" "multi_cognitive_services_contributor" {
 # Assign Cognitive Services OpenAI Contributor role to the Web App
 resource "azurerm_role_assignment" "speech_contributor" {
   depends_on                       = [module.api]
-  scope                            = azurerm_cognitive_account.CognitiveServices.id
+  scope                            = data.azurerm_cognitive_account.CognitiveServices.id
   role_definition_name             = "Cognitive Services Speech Contributor"
   principal_id                     = module.api.IDENTITY_PRINCIPAL_ID
   skip_service_principal_aad_check = true

@@ -1,6 +1,7 @@
 from typing import List, Dict, Any, Optional
 from openai import AsyncAzureOpenAI
 import json
+import asyncio
 from ..config.settings import Config
 from ..config.constants import OpenAIPrompts
 from ..utils.helpers import AgentPersonaType
@@ -71,27 +72,100 @@ class OpenAIService:
         await self.cache_service.set(f"chat_history:{call_connection_id}", chat_history)
     
     async def get_chat_completion(
-        self, 
+        self,
         call_connection_id: str,
-        user_prompt: str, 
+        user_prompt: str,
         max_length: int = 200
     ) -> str:
         """
-        Get chat completion from Azure OpenAI
+        Get chat completion from Azure OpenAI Assistant
         Args:
             user_prompt: User's input text
             max_length: Maximum length of the response
         """
         try:
+            # Use Assistant API if OPENAI_ASSISTANT_ID is configured
+            if self.config.OPENAI_ASSISTANT_ID:
+                return await self._get_assistant_response(call_connection_id, user_prompt, max_length)
+            else:
+                # Fallback to Chat Completions API
+                return await self._get_chat_completion_fallback(call_connection_id, user_prompt, max_length)
+
+        except Exception as ex:
+            print(f"Error in OpenAI API call: {ex}")
+            return ""
+
+    async def _get_assistant_response(
+        self,
+        call_connection_id: str,
+        user_prompt: str,
+        max_length: int = 200
+    ) -> str:
+        """Get response using OpenAI Assistant API"""
+        try:
+            # Get or create thread for this call
+            thread_id = await self.cache_service.get(f"thread_id:{call_connection_id}")
+
+            if not thread_id:
+                # Create new thread
+                thread = await self.client.beta.threads.create()
+                thread_id = thread.id
+                await self.cache_service.set(f"thread_id:{call_connection_id}", thread_id)
+
+            # Add user message to thread
+            await self.client.beta.threads.messages.create(
+                thread_id=thread_id,
+                role="user",
+                content=f"In less than {max_length} characters and being succinct: {user_prompt}"
+            )
+
+            # Run the assistant
+            run = await self.client.beta.threads.runs.create(
+                thread_id=thread_id,
+                assistant_id=self.config.OPENAI_ASSISTANT_ID
+            )
+
+            # Wait for completion
+            while run.status in ['queued', 'in_progress']:
+                await asyncio.sleep(1)
+                run = await self.client.beta.threads.runs.retrieve(
+                    thread_id=thread_id,
+                    run_id=run.id
+                )
+
+            if run.status == 'completed':
+                # Get the latest message
+                messages = await self.client.beta.threads.messages.list(
+                    thread_id=thread_id,
+                    limit=1
+                )
+
+                if messages.data:
+                    response_content = messages.data[0].content[0].text.value
+                    return response_content
+
+            return "I apologize, but I'm having trouble processing your request right now."
+
+        except Exception as ex:
+            print(f"Error in Assistant API call: {ex}")
+            return "I apologize, but I'm having trouble processing your request right now."
+
+    async def _get_chat_completion_fallback(
+        self,
+        call_connection_id: str,
+        user_prompt: str,
+        max_length: int = 200
+    ) -> str:
+        """Fallback to Chat Completions API"""
+        try:
             # Retrieve chat history
             chat_history = await self.cache_service.get(f"chat_history:{call_connection_id}")
-            
+
             if chat_history is None:
                 # Initialize chat history if it doesn't exist
                 await self._initialize_chat_history(call_connection_id)
                 chat_history = await self.cache_service.get(f"chat_history:{call_connection_id}")
-            
-            
+
             # Add user message to history
             chat_history.append({
                 "role": "user",
@@ -111,14 +185,14 @@ class OpenAIService:
                 "role": "assistant",
                 "content": response_content
             })
-            
+
             # Save updated chat history
             await self.cache_service.set(f"chat_history:{call_connection_id}", chat_history)
 
             return response_content
 
         except Exception as ex:
-            print(f"Error in OpenAI API call: {ex}")
+            print(f"Error in Chat Completions API call: {ex}")
             return ""
 
 
