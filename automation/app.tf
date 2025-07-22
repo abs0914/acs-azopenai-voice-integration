@@ -4,7 +4,7 @@
 module "applicationinsights" {
   source           = "./modules/applicationinsights"
   location         = var.location
-  rg_name          = azurerm_resource_group.rg.name
+  rg_name          = data.azurerm_resource_group.rg.name
   environment_name = var.environment
   workspace_id     = module.loganalytics.LOGANALYTICS_WORKSPACE_ID
   tags             = local.default_tags
@@ -17,7 +17,7 @@ module "applicationinsights" {
 module "loganalytics" {
   source         = "./modules/loganalytics"
   location       = var.location
-  rg_name        = azurerm_resource_group.rg.name
+  rg_name        = data.azurerm_resource_group.rg.name
   tags           = local.default_tags
   resource_token = "${local.name_prefix}-loganalytics"
 }
@@ -28,7 +28,7 @@ module "loganalytics" {
 module "appserviceplan" {
   source         = "./modules/appserviceplan"
   location       = var.location
-  rg_name        = azurerm_resource_group.rg.name
+  rg_name        = data.azurerm_resource_group.rg.name
   tags           = local.default_tags
   resource_token = "${local.name_prefix}-appserviceplan"
   sku_name       = "B3"
@@ -48,13 +48,12 @@ data "archive_file" "api_zip" {
 module "api" {
   depends_on = [azurerm_cognitive_deployment.openai_deployments,
     azurerm_cosmosdb_sql_container.call_session_container,
-    azurerm_communication_service.communication_service,
-    null_resource.python_script_purchase_phone_number,
+    data.azurerm_communication_service.communication_service,
   azurerm_redis_cache.redis]
 
   source             = "./modules/appservicepython"
   location           = var.location
-  rg_name            = azurerm_resource_group.rg.name
+  rg_name            = data.azurerm_resource_group.rg.name
   resource_token     = "${local.name_prefix}-api-${random_string.unique.result}"
   tags               = merge(local.default_tags, { "api" = "api" })
   service_name       = "api"
@@ -63,9 +62,9 @@ module "api" {
     SCM_DO_BUILD_DURING_DEPLOYMENT        = "true"
     APPLICATIONINSIGHTS_CONNECTION_STRING = module.applicationinsights.APPLICATIONINSIGHTS_CONNECTION_STRING
     #ACS
-    ACS_CONNECTION_STRING      = azurerm_communication_service.communication_service.primary_connection_string
+    ACS_CONNECTION_STRING      = data.azurerm_communication_service.communication_service.primary_connection_string
     COGNITIVE_SERVICE_ENDPOINT = azurerm_cognitive_account.CognitiveServices.endpoint
-    AGENT_PHONE_NUMBER         = jsondecode(file("${path.module}/phone_number_result.json")).phone_number
+    AGENT_PHONE_NUMBER         = local.agent_phone_number
     VOICE_NAME                 = "en-US-AvaMultilingualNeural"
     # Azure OpenAI
     AZURE_OPENAI_SERVICE_KEY           = azurerm_cognitive_account.openai.primary_access_key
@@ -98,15 +97,15 @@ module "api" {
 resource "null_resource" "api_set_allow_origins" {
   depends_on = [module.api]
   provisioner "local-exec" {
-    # command = "az webapp config appsettings set --resource-group ${azurerm_resource_group.rg.name} --name ${module.api.APPSERVICE_NAME} --settings API_ALLOW_ORIGINS=${module.web.URI}"
-    command = "az webapp config appsettings set --resource-group ${azurerm_resource_group.rg.name} --name ${module.api.APPSERVICE_NAME} --settings API_ALLOW_ORIGINS=*"
+    # command = "az webapp config appsettings set --resource-group ${data.azurerm_resource_group.rg.name} --name ${module.api.APPSERVICE_NAME} --settings API_ALLOW_ORIGINS=${module.web.URI}"
+    command = "az webapp config appsettings set --resource-group ${data.azurerm_resource_group.rg.name} --name ${module.api.APPSERVICE_NAME} --settings API_ALLOW_ORIGINS=*"
   }
 }
 
 resource "null_resource" "deploy_app" {
   depends_on = [null_resource.api_set_allow_origins]
   provisioner "local-exec" {
-    command = "az webapp deployment source config-zip --resource-group ${azurerm_resource_group.rg.name} --name ${module.api.APPSERVICE_NAME} --src ${data.archive_file.api_zip.output_path}"
+    command = "az webapp deployment source config-zip --resource-group ${data.azurerm_resource_group.rg.name} --name ${module.api.APPSERVICE_NAME} --src ${data.archive_file.api_zip.output_path}"
   }
   # triggers = {
   #   always = "${timestamp()}"

@@ -7,8 +7,8 @@ resource "random_password" "db_password" {
 
 resource "azurerm_cosmosdb_account" "call_session_account" {
   name                = "${local.name_prefix}-callsession-${random_string.unique.result}"
-  location            = azurerm_resource_group.rg.location
-  resource_group_name = azurerm_resource_group.rg.name
+  location            = data.azurerm_resource_group.rg.location
+  resource_group_name = data.azurerm_resource_group.rg.name
   offer_type          = "Standard"
   kind                = "GlobalDocumentDB"
 
@@ -21,7 +21,7 @@ resource "azurerm_cosmosdb_account" "call_session_account" {
   }
 
   geo_location {
-    location          = azurerm_resource_group.rg.location
+    location          = data.azurerm_resource_group.rg.location
     failover_priority = 0
     zone_redundant    = false
   }
@@ -59,13 +59,13 @@ resource "azurerm_cosmosdb_account" "call_session_account" {
 
 resource "azurerm_cosmosdb_sql_database" "call_session_db" {
   name                = "CallSessionsDB"
-  resource_group_name = azurerm_resource_group.rg.name
+  resource_group_name = data.azurerm_resource_group.rg.name
   account_name        = azurerm_cosmosdb_account.call_session_account.name
 }
 
 resource "azurerm_cosmosdb_sql_container" "call_session_container" {
   name                = "CallSessions"
-  resource_group_name = azurerm_resource_group.rg.name
+  resource_group_name = data.azurerm_resource_group.rg.name
   account_name        = azurerm_cosmosdb_account.call_session_account.name
   database_name       = azurerm_cosmosdb_sql_database.call_session_db.name
 
@@ -88,7 +88,7 @@ resource "azurerm_cosmosdb_sql_container" "call_session_container" {
 }
 
 resource "azurerm_cosmosdb_sql_role_definition" "data_reader" {
-  resource_group_name = azurerm_resource_group.rg.name
+  resource_group_name = data.azurerm_resource_group.rg.name
   account_name        = azurerm_cosmosdb_account.call_session_account.name
   name                = "${local.name_prefix}-callsession-reader-role"
   type                = "BuiltInRole"
@@ -105,7 +105,7 @@ resource "azurerm_cosmosdb_sql_role_definition" "data_reader" {
 }
 
 resource "azurerm_cosmosdb_sql_role_definition" "data_contributor" {
-  resource_group_name = azurerm_resource_group.rg.name
+  resource_group_name = data.azurerm_resource_group.rg.name
   account_name        = azurerm_cosmosdb_account.call_session_account.name
   name                = "${local.name_prefix}-callsession-contributer-role"
   type                = "BuiltInRole"

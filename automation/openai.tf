@@ -43,7 +43,7 @@ variable "openai_deployments" {
 }
 
 resource "azurerm_cognitive_account" "openai" {
-  resource_group_name           = azurerm_resource_group.rg.name
+  resource_group_name           = data.azurerm_resource_group.rg.name
   custom_subdomain_name         = "${local.name_prefix}-openai-${random_string.unique.result}"
   kind                          = "OpenAI"
   local_auth_enabled            = true

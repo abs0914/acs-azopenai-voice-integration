@@ -1,8 +1,8 @@
 # Redis Cache resource
 resource "azurerm_redis_cache" "redis" {
   name                = "${local.name_prefix}-callsession-${random_string.unique.result}"
-  location            = azurerm_resource_group.rg.location
-  resource_group_name = azurerm_resource_group.rg.name
+  location            = data.azurerm_resource_group.rg.location
+  resource_group_name = data.azurerm_resource_group.rg.name
   zones               = ["1", "2", "3"]
 
   redis_version = "6"
