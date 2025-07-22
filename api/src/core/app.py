@@ -51,7 +51,7 @@ class CallAutomationApp:
         )
 
         self.setup_routes()
-        self.logger.info("Application initialized successfully V0.15")
+        self.logger.info("Application initialized successfully V0.17 - Alternative Test")
 
     def setup_routes(self):
         """Set up application routes"""
@@ -65,6 +65,11 @@ class CallAutomationApp:
         )
         self.app.route("/api/initiateOutboundCall", methods=["POST"])(
             self.initiate_outbound_call
+        )
+
+        # Alternative solution endpoint
+        self.app.route("/api/testIncomingCall", methods=["POST"])(
+            self.test_incoming_call_handler
         )
         
 
@@ -378,6 +383,66 @@ class CallAutomationApp:
         if "+" not in caller_id:
             caller_id = "+" + caller_id
         return caller_id
+
+    async def test_incoming_call_handler(self):
+        """Test incoming call handler - Alternative solution"""
+        self.logger.info("Test incoming call handler called")
+        try:
+            request_data = await request.get_json()
+            phone_number = request_data.get("phoneNumber", "+1234567890")
+
+            self.logger.info(f"Testing incoming call simulation from: {phone_number}")
+
+            # Create a simulated incoming call event
+            simulated_event = {
+                "eventType": "Microsoft.Communication.IncomingCall",
+                "data": {
+                    "incomingCallContext": f"test-context-{phone_number}",
+                    "from": {
+                        "kind": "phoneNumber",
+                        "phoneNumber": {"value": phone_number}
+                    },
+                    "to": {
+                        "kind": "phoneNumber",
+                        "phoneNumber": {"value": self.config.AGENT_PHONE_NUMBER}
+                    }
+                },
+                "eventTime": "2025-07-22T16:00:00Z",
+                "id": f"test-{phone_number}",
+                "dataVersion": "1.0"
+            }
+
+            # Process the simulated event through the existing handler
+            self.logger.info("Processing simulated incoming call event")
+
+            # Extract caller ID
+            caller_id = phone_number
+
+            # Generate callback URI
+            callback_uri = self._generate_callback_uri(caller_id)
+
+            # Simulate answering the call
+            self.logger.info(f"Simulated call answer for {caller_id} with callback {callback_uri}")
+
+            return Response(
+                response=json.dumps({
+                    "status": "success",
+                    "message": f"Simulated incoming call from {phone_number}",
+                    "caller_id": caller_id,
+                    "callback_uri": callback_uri,
+                    "version": "V0.17-Alternative-Test"
+                }),
+                status=200,
+                headers={"Content-Type": "application/json"}
+            )
+
+        except Exception as e:
+            self.logger.error(f"Error in test incoming call handler: {str(e)}", exc_info=True)
+            return Response(
+                response=json.dumps({"error": str(e)}),
+                status=500,
+                headers={"Content-Type": "application/json"}
+            )
     
     def run(self, host: str = "0.0.0.0", port: int = 8000):
         """Run the application"""
