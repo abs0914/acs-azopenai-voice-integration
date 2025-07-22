@@ -43,7 +43,7 @@ This document describes the implementation of Azure AI Voice Live API integratio
 ```bash
 # Azure AI Voice Live API
 AZURE_VOICE_LIVE_ENDPOINT="https://vida-voice-live.cognitiveservices.azure.com/"
-AZURE_VOICE_LIVE_API_KEY="D0ccvKqf20m8g8wXHnqyF7BFypUJygfQXrjIOm2kMfJASaNvXKu0JQQJ99BGACHYHv6XJ3w3AAAAACOGv7Z2"
+AZURE_VOICE_LIVE_API_KEY="<your-voice-live-api-key>"
 AZURE_VOICE_LIVE_DEPLOYMENT="gpt-4o-realtime-preview"
 AZURE_VOICE_LIVE_REGION="eastus2"
 VIDA_VOICE_BOT_ASSISTANT_ID="asst_dEODj1Hu6Z68Ebggl13DAHPv"
