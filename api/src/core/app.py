@@ -16,6 +16,8 @@ from src.config.constants import EventTypes, StatusCodes, ApiPayloadKeysForValid
 from src.services.call_handler import CallHandler
 from src.services.cache_service import CacheService
 from src.services.openai_service import OpenAIService
+from src.services.voice_live_service import VoiceLiveService
+from src.services.audio_streaming_service import AudioStreamingService
 from src.core.event_handlers import EventHandlers
 from src.services.cosmosdb_service import CosmosDBService
 
@@ -41,6 +43,13 @@ class CallAutomationApp:
         # Initialize CosmosDBService
         self.cosmosdb_service = CosmosDBService(self.config)
 
+        # Initialize Voice Live services
+        self.voice_live_service = VoiceLiveService(self.config)
+        self.audio_streaming_service = AudioStreamingService(
+            self.config,
+            self.call_automation_client,
+            self.voice_live_service
+        )
 
         # Initialize event handlers with all required services
         self.event_handlers = EventHandlers(
@@ -48,10 +57,12 @@ class CallAutomationApp:
             cache_service=self.cache_service,
             openai_service=self.openai_service,
             cosmosdb_service=self.cosmosdb_service,
+            voice_live_service=self.voice_live_service,
+            audio_streaming_service=self.audio_streaming_service,
         )
 
         self.setup_routes()
-        self.logger.info("Application initialized successfully V0.17 - Alternative Test")
+        self.logger.info("Application initialized successfully V1.0 - Azure AI Voice Live Integration")
 
     def setup_routes(self):
         """Set up application routes"""
@@ -71,12 +82,17 @@ class CallAutomationApp:
         self.app.route("/api/testIncomingCall", methods=["POST"])(
             self.test_incoming_call_handler
         )
+
+        # Media streaming endpoint for Voice Live integration
+        self.app.route("/api/mediaStreaming/<call_connection_id>", methods=["POST"])(
+            self.handle_media_streaming
+        )
         
 
     async def hello(self):
         """Health check endpoint"""
         self.logger.info("async def hello")
-        return "Hello ACS Call Automation Service V0.15"
+        return "Hello ACS Call Automation Service with Azure AI Voice Live V1.0"
 
     async def health_check(self):
         """Health check endpoint for Azure App Service"""
@@ -443,7 +459,26 @@ class CallAutomationApp:
                 status=500,
                 headers={"Content-Type": "application/json"}
             )
-    
+
+    async def handle_media_streaming(self, call_connection_id: str):
+        """Handle media streaming events for Voice Live integration"""
+        try:
+            request_data = await request.get_json()
+            self.logger.info(f"Received media streaming event for call {call_connection_id}: {json.dumps(request_data)}")
+
+            # Forward to audio streaming service
+            await self.audio_streaming_service.handle_media_streaming_event(call_connection_id, request_data)
+
+            return Response(status=StatusCodes.OK)
+
+        except Exception as e:
+            self.logger.error(f"Error handling media streaming: {str(e)}", exc_info=True)
+            return Response(
+                response=json.dumps({"error": str(e)}),
+                status=StatusCodes.SERVER_ERROR,
+                headers={"Content-Type": "application/json"}
+            )
+
     def run(self, host: str = "0.0.0.0", port: int = 8000):
         """Run the application"""
         self.app.run(host=host, port=port)

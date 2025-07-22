@@ -7,25 +7,31 @@ from ..services.call_handler import CallHandler
 from ..services.cache_service import CacheService
 from ..services.openai_service import OpenAIService
 from ..services.cosmosdb_service import CosmosDBService
+from ..services.voice_live_service import VoiceLiveService
+from ..services.audio_streaming_service import AudioStreamingService
 from ..utils.helpers import AgentPersonaType
 from ..utils.logger import setup_logger
 
 
 class EventHandlers:
-    """Handles different types of call automation events"""
-    def __init__(self, 
-                 call_handler: CallHandler, 
+    """Handles different types of call automation events with Voice Live integration"""
+    def __init__(self,
+                 call_handler: CallHandler,
                  cache_service: CacheService,
                  openai_service: OpenAIService,
-                 cosmosdb_service: CosmosDBService):
+                 cosmosdb_service: CosmosDBService,
+                 voice_live_service: VoiceLiveService,
+                 audio_streaming_service: AudioStreamingService):
         self.call_handler = call_handler
         self.cache_service = cache_service
         self.openai_service = openai_service
         self.cosmosdb_service = cosmosdb_service
+        self.voice_live_service = voice_live_service
+        self.audio_streaming_service = audio_streaming_service
         self.max_retry = 2
         self._setup_context_handlers()
         # Initialize logger
-        self.logger = setup_logger(__name__)        
+        self.logger = setup_logger(__name__)
 
     def _setup_context_handlers(self) -> None:
         """Initialize context handlers mapping"""
@@ -89,72 +95,86 @@ class EventHandlers:
 
     async def handle_call_connected(self, event: CloudEvent, phone_number: str) -> None:
         """
-        Handle call connected event with proper error handling
+        Handle call connected event with Voice Live integration
         Args:
             event: CloudEvent containing call data
             phone_number: Caller or Target's phone number depending on whether it's an incoming or outgoing call
         """
         try:
             call_connection_id = event.data.get("callConnectionId")
+            if not call_connection_id:
+                self.logger.error("Missing callConnectionId in CallConnected event")
+                return
 
             # Initialize the conversation state
             await self.cache_service.set(f"call_active:{call_connection_id}", True)
             await self.cache_service.set(f"current_session_id:{call_connection_id}", call_connection_id)
             await self.cache_service.set(f"current_call_id:{call_connection_id}", call_connection_id)
-            
+
             participant_id = await self.cache_service.get(f"participant_id:{call_connection_id}")
             payload_dict = await self.cache_service.get(f"payload_dict:{call_connection_id}")
-            #candidate_data_dict = await self.cache_service.get(f"candidate_data_dict:{call_connection_id}")
-            #job_data_dict = await self.cache_service.get(f"job_data_dict:{call_connection_id}")
 
-            
-            # call_connection_id = event.data.get("callConnectionId")
-            # if not call_connection_id:
-            #     self.logger.error("Missing callConnectionId in CallConnected event")
-            #     return
-            # # Create a new session in CosmosDB
-            # session_id = call_connection_id
-            # # Initialize the conversation state
-            # await self.cache_service.set("call_active", True)
-            # await self.cache_service.set("current_session_id", session_id)
-            # await self.cache_service.set("current_call_id", call_connection_id)
-            # #result = None  # Initialize result
-
-            # only accounts for 121 calls - refactor for group calls
-            # participant_id = await self.cache_service.get("participant_id")
-            # candidate_data_dict = await self.cache_service.get("candidate_data_dict")
-            # job_data_dict = await self.cache_service.get("job_data_dict")
-            
-            
             if participant_id:
-                hello_message =  f"Hello {payload_dict.get('client_name', "")}! {ConversationPrompts.HELLO}. Is this a good time to speak?"
-                await self.call_handler.handle_recognize(
-                    hello_message,
-                    participant_id,
+                # Start bidirectional audio streaming with Voice Live API
+                websocket_uri = f"wss://your-websocket-endpoint/{call_connection_id}"  # This should be your WebSocket endpoint
+
+                streaming_started = await self.audio_streaming_service.start_bidirectional_streaming(
                     call_connection_id,
-                    context="doGreetingCall"
+                    websocket_uri
                 )
-                await self.openai_service.update_agent_persona(
-                    agent_persona=AgentPersonaType.DEFAULT,
-                    call_connection_id=call_connection_id, 
-                    user_message_to_include=f"This is information about my request for you to use during our call: {payload_dict}\nNow start the conversation based on this.",              
-                    assistant_message_to_include=json.dumps({
-                    "msg": hello_message,
-                        "context": "doGreetingCall"
+
+                if streaming_started:
+                    # Configure Voice Live session with vida-voice-bot agent
+                    await self.audio_streaming_service.configure_voice_live_session(
+                        call_connection_id,
+                        assistant_id=None  # Will use default VIDA_VOICE_BOT_ASSISTANT_ID from config
+                    )
+
+                    # Send initial greeting through Voice Live API
+                    hello_message = f"Hello {payload_dict.get('client_name', '')}! {ConversationPrompts.HELLO}. Is this a good time to speak?"
+
+                    # Store conversation context
+                    await self.cache_service.set(f"conversation_context:{call_connection_id}", {
+                        "payload": payload_dict,
+                        "initial_greeting": hello_message,
+                        "participant_id": participant_id
                     })
-                )
+
+                    self.logger.info(f"Voice Live session started for call {call_connection_id}")
+                else:
+                    self.logger.error(f"Failed to start Voice Live streaming for call {call_connection_id}")
+                    # Fallback to traditional approach if Voice Live fails
+                    await self._fallback_to_traditional_approach(call_connection_id, participant_id, payload_dict)
             else:
                 self.logger.info("Participant ID not available yet. Waiting for ParticipantsUpdated event.")
-            
-            #if result is None:
-                #self.logger.error("Initial greeting recognition failed")
-                # await self.call_handler.hangup(call_connection_id)
-                  
-                
+
         except Exception as e:
             self.logger.error(f"Error in handle_call_connected: {str(e)}", exc_info=True)
             if call_connection_id:
                 await self.call_handler.hangup(call_connection_id)
+
+    async def _fallback_to_traditional_approach(self, call_connection_id: str, participant_id: str, payload_dict: dict):
+        """Fallback to traditional STT/TTS approach if Voice Live fails"""
+        try:
+            hello_message = f"Hello {payload_dict.get('client_name', '')}! {ConversationPrompts.HELLO}. Is this a good time to speak?"
+            await self.call_handler.handle_recognize(
+                hello_message,
+                participant_id,
+                call_connection_id,
+                context="doGreetingCall"
+            )
+            await self.openai_service.update_agent_persona(
+                agent_persona=AgentPersonaType.DEFAULT,
+                call_connection_id=call_connection_id,
+                user_message_to_include=f"This is information about my request for you to use during our call: {payload_dict}\nNow start the conversation based on this.",
+                assistant_message_to_include=json.dumps({
+                    "msg": hello_message,
+                    "context": "doGreetingCall"
+                })
+            )
+            self.logger.info(f"Fallback to traditional approach for call {call_connection_id}")
+        except Exception as e:
+            self.logger.error(f"Error in fallback approach: {e}")
 
     async def handle_participants_updated(self, event: CloudEvent, caller_id: str) -> None:
         """Handle participants updated event"""
@@ -201,6 +221,43 @@ class EventHandlers:
 
         except Exception as e:
             self.logger.error(f"Error in handle_participants_updated: {str(e)}", exc_info=True)
+
+    async def handle_media_streaming_event(self, event: CloudEvent, caller_id: str) -> None:
+        """Handle media streaming events for Voice Live integration"""
+        try:
+            call_connection_id = event.data.get("callConnectionId")
+            if not call_connection_id:
+                self.logger.error("Missing callConnectionId in media streaming event")
+                return
+
+            # Forward the event to the audio streaming service
+            await self.audio_streaming_service.handle_media_streaming_event(call_connection_id, event.data)
+
+        except Exception as e:
+            self.logger.error(f"Error handling media streaming event: {e}")
+
+    async def handle_call_disconnected(self, event: CloudEvent, caller_id: str) -> None:
+        """Handle call disconnected event and cleanup Voice Live resources"""
+        try:
+            call_connection_id = event.data.get("callConnectionId")
+            if not call_connection_id:
+                self.logger.error("Missing callConnectionId in call disconnected event")
+                return
+
+            # Stop Voice Live streaming
+            if self.audio_streaming_service.is_streaming_active(call_connection_id):
+                await self.audio_streaming_service.stop_bidirectional_streaming(call_connection_id)
+
+            # Clean up cache
+            await self.cache_service.delete(f"call_active:{call_connection_id}")
+            await self.cache_service.delete(f"current_session_id:{call_connection_id}")
+            await self.cache_service.delete(f"current_call_id:{call_connection_id}")
+            await self.cache_service.delete(f"conversation_context:{call_connection_id}")
+
+            self.logger.info(f"Cleaned up resources for disconnected call {call_connection_id}")
+
+        except Exception as e:
+            self.logger.error(f"Error handling call disconnected: {e}")
 
     async def handle_recognize_completed(self, event: CloudEvent, caller_id: str) -> None:
         """Handle recognize completed event"""
