@@ -39,6 +39,7 @@ class MinimalHandler(BaseHTTPRequestHandler):
                 <li><a href="/diagnostic">/diagnostic</a> - System diagnostics</li>
                 <li><a href="/files">/files</a> - File listing</li>
                 <li><a href="/test-imports">/test-imports</a> - Test Python imports</li>
+                <li><a href="/test-main-execution">/test-main-execution</a> - Test main.py execution steps</li>
                 </ul>
                 </body>
                 </html>
@@ -100,12 +101,12 @@ class MinimalHandler(BaseHTTPRequestHandler):
                 self.send_response(200)
                 self.send_header('Content-type', 'application/json')
                 self.end_headers()
-                
+
                 import_tests = {}
-                
+
                 # Test basic imports
                 test_modules = ['quart', 'flask', 'azure', 'openai', 'dotenv']
-                
+
                 for module in test_modules:
                     try:
                         __import__(module)
@@ -114,7 +115,7 @@ class MinimalHandler(BaseHTTPRequestHandler):
                         import_tests[module] = f"❌ Missing: {str(e)}"
                     except Exception as e:
                         import_tests[module] = f"⚠️ Error: {str(e)}"
-                
+
                 # Test main.py import
                 try:
                     import main
@@ -122,8 +123,42 @@ class MinimalHandler(BaseHTTPRequestHandler):
                 except Exception as e:
                     import_tests["main_module"] = f"❌ Import failed: {str(e)}"
                     import_tests["main_module_traceback"] = traceback.format_exc()
-                
+
                 response = json.dumps(import_tests, indent=2).encode()
+                self.wfile.write(response)
+
+            elif self.path == '/test-main-execution':
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json')
+                self.end_headers()
+
+                execution_test = {}
+
+                try:
+                    # Test specific imports from main.py
+                    from startup import check_required_env_vars
+                    execution_test["startup_import"] = "✅ Success"
+                except Exception as e:
+                    execution_test["startup_import"] = f"❌ Failed: {str(e)}"
+                    execution_test["startup_import_traceback"] = traceback.format_exc()
+
+                try:
+                    from src.core.app import CallAutomationApp
+                    execution_test["app_import"] = "✅ Success"
+                except Exception as e:
+                    execution_test["app_import"] = f"❌ Failed: {str(e)}"
+                    execution_test["app_import_traceback"] = traceback.format_exc()
+
+                try:
+                    # Test environment check
+                    from startup import check_required_env_vars
+                    check_required_env_vars()
+                    execution_test["env_check"] = "✅ Success"
+                except Exception as e:
+                    execution_test["env_check"] = f"❌ Failed: {str(e)}"
+                    execution_test["env_check_traceback"] = traceback.format_exc()
+
+                response = json.dumps(execution_test, indent=2).encode()
                 self.wfile.write(response)
                 
             else:
