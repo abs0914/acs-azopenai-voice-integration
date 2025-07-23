@@ -31,6 +31,7 @@ jobs:
 
       - name: Install dependencies
         run: |
+          source venv/bin/activate
           cd api
           pip install -r requirements.txt
         
