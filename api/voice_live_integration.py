@@ -16,6 +16,18 @@ from websockets.exceptions import WebSocketException
 
 logger = logging.getLogger(__name__)
 
+# Global logging function for debugging
+def log_message(message):
+    """Log message to both console and global logs"""
+    print(message)
+    try:
+        # Try to access global logs from main app
+        import sys
+        if hasattr(sys.modules.get('__main__'), 'voice_live_logs'):
+            sys.modules['__main__'].voice_live_logs.append(message)
+    except:
+        pass  # Ignore if global logs not available
+
 class VoiceLiveCallHandler:
     """Handles Voice Live integration for ACS calls"""
     
@@ -30,10 +42,10 @@ class VoiceLiveCallHandler:
     async def start_voice_conversation(self, call_connection_id: str):
         """Start a Voice Live conversation for an ACS call"""
         try:
-            print(f"🎤 Starting Voice Live conversation for call: {call_connection_id}")
-            print(f"🔗 Endpoint: {self.endpoint}")
-            print(f"🤖 Agent ID: {self.agent_id}")
-            print(f"📦 Deployment: {self.deployment}")
+            log_message(f"🎤 Starting Voice Live conversation for call: {call_connection_id}")
+            log_message(f"🔗 Endpoint: {self.endpoint}")
+            log_message(f"🤖 Agent ID: {self.agent_id}")
+            log_message(f"📦 Deployment: {self.deployment}")
 
             self.call_connection_id = call_connection_id
 
@@ -42,46 +54,46 @@ class VoiceLiveCallHandler:
             url = f"{self.endpoint.rstrip('/')}/voice-agent/realtime?api-version=2025-05-01-preview&model={self.agent_id}"
             url = url.replace("https://", "wss://")
 
-            print(f"🌐 WebSocket URL: {url}")
+            log_message(f"🌐 WebSocket URL: {url}")
 
             headers = {
                 "api-key": self.api_key,
                 "x-ms-client-request-id": str(uuid.uuid4())
             }
 
-            print(f"📋 Headers: {list(headers.keys())}")
-            print("🔌 Attempting WebSocket connection...")
+            log_message(f"📋 Headers: {list(headers.keys())}")
+            log_message("🔌 Attempting WebSocket connection...")
 
             try:
                 self.connection = await websockets.connect(url, extra_headers=headers)
-                print("✅ WebSocket connection established")
+                log_message("✅ WebSocket connection established")
             except Exception as ws_error:
-                print(f"❌ First connection attempt failed: {ws_error}")
+                log_message(f"❌ First connection attempt failed: {ws_error}")
 
                 # Try alternative URL format without agent_id
                 alt_url = f"{self.endpoint.rstrip('/')}/voice-agent/realtime?api-version=2025-05-01-preview&model={self.deployment}"
                 alt_url = alt_url.replace("https://", "wss://")
-                print(f"🔄 Trying alternative URL: {alt_url}")
+                log_message(f"🔄 Trying alternative URL: {alt_url}")
 
                 self.connection = await websockets.connect(alt_url, extra_headers=headers)
-                print("✅ WebSocket connection established (alternative URL)")
+                log_message("✅ WebSocket connection established (alternative URL)")
 
             # Configure the Voice Live session
-            print("⚙️ Configuring Voice Live session...")
+            log_message("⚙️ Configuring Voice Live session...")
             await self.configure_session()
 
             # Send initial greeting
-            print("🎵 Sending initial greeting...")
+            log_message("🎵 Sending initial greeting...")
             await self.send_initial_greeting()
 
-            print("✅ Voice Live conversation started successfully")
+            log_message("✅ Voice Live conversation started successfully")
             return True
 
         except Exception as e:
-            print(f"❌ Failed to start Voice Live conversation: {e}")
-            print(f"📋 Error details: {type(e).__name__}: {str(e)}")
+            log_message(f"❌ Failed to start Voice Live conversation: {e}")
+            log_message(f"📋 Error details: {type(e).__name__}: {str(e)}")
             import traceback
-            print(f"📋 Traceback: {traceback.format_exc()}")
+            log_message(f"📋 Traceback: {traceback.format_exc()}")
             return False
     
     async def configure_session(self):

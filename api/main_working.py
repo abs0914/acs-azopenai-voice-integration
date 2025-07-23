@@ -500,14 +500,20 @@ def start_application():
                     "message": "Failed to install websockets"
                 })
 
+        # Global variable to store logs
+        voice_live_logs = []
+
         @app.route("/test-voice-live-connection")
         async def test_voice_live_connection():
-            """Test Voice Live connection manually"""
+            """Test Voice Live connection manually with detailed logging"""
+            global voice_live_logs
+            voice_live_logs = []  # Clear previous logs
+
             try:
                 from voice_live_integration import VoiceLiveCallHandler
 
                 handler = VoiceLiveCallHandler()
-                print("🧪 Testing Voice Live connection manually...")
+                voice_live_logs.append("🧪 Testing Voice Live connection manually...")
 
                 # Try to start a test conversation
                 success = await handler.start_voice_conversation("test-call-123")
@@ -518,21 +524,37 @@ def start_application():
                     return jsonify({
                         "status": "success",
                         "message": "Voice Live connection test successful",
-                        "details": "WebSocket connection established and greeting sent"
+                        "details": "WebSocket connection established and greeting sent",
+                        "logs": voice_live_logs
                     })
                 else:
                     return jsonify({
                         "status": "error",
                         "message": "Voice Live connection test failed",
-                        "details": "Check application logs for detailed error information"
+                        "details": "Check logs below for detailed error information",
+                        "logs": voice_live_logs
                     })
 
             except Exception as e:
+                voice_live_logs.append(f"❌ Exception: {type(e).__name__}: {str(e)}")
+                import traceback
+                voice_live_logs.append(f"📋 Traceback: {traceback.format_exc()}")
+
                 return jsonify({
                     "status": "error",
                     "error": str(e),
-                    "message": "Voice Live connection test failed with exception"
+                    "message": "Voice Live connection test failed with exception",
+                    "logs": voice_live_logs
                 })
+
+        @app.route("/voice-live-logs")
+        async def get_voice_live_logs():
+            """Get the latest Voice Live logs"""
+            global voice_live_logs
+            return jsonify({
+                "logs": voice_live_logs,
+                "count": len(voice_live_logs)
+            })
         
         # Start the server
         port = int(os.getenv("PORT", "8000"))
