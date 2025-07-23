@@ -132,18 +132,44 @@ async def handle_call_connected(call_connection_id, call_data):
         client = CallAutomationClient.from_connection_string(connection_string)
         call_connection = client.get_call_connection(call_connection_id)
 
-        # Play a welcome message
+        # Play a welcome message using TTS
         welcome_message = "Hello! Welcome to the ACS Voice Integration. How can I help you today?"
 
         print(f"📞 Playing welcome message: {welcome_message}")
 
-        # Play the message (you might need to adjust this based on your TTS setup)
-        play_result = call_connection.play_media_to_all(
-            play_source_info=welcome_message,
-            operation_context="welcome_message"
-        )
+        try:
+            # Import TTS source
+            from azure.communication.callautomation import TextSource
 
-        print(f"✅ Welcome message initiated: {play_result}")
+            # Create TTS source
+            text_source = TextSource(
+                text=welcome_message,
+                voice_name="en-US-JennyNeural"  # Use a clear female voice
+            )
+
+            # Play the message using TTS
+            play_result = call_connection.play_media_to_all(
+                play_source=text_source,
+                operation_context="welcome_message"
+            )
+
+            print(f"✅ Welcome message initiated with TTS: {play_result}")
+
+        except Exception as tts_error:
+            print(f"❌ TTS failed, trying simple text: {tts_error}")
+
+            # Fallback: try without TTS
+            try:
+                play_result = call_connection.play_media_to_all(
+                    play_source=welcome_message,
+                    operation_context="welcome_message_fallback"
+                )
+                print(f"✅ Fallback message initiated: {play_result}")
+            except Exception as fallback_error:
+                print(f"❌ Fallback also failed: {fallback_error}")
+
+                # Last resort: just log that call is connected
+                print("📞 Call connected but unable to play welcome message")
 
     except Exception as e:
         print(f"❌ Error handling connected call: {e}")
@@ -285,6 +311,17 @@ def start_application():
                         elif event_type == "Microsoft.Communication.CallDisconnected":
                             print("📞 Call disconnected")
 
+                        elif event_type == "Microsoft.Communication.PlayCompleted":
+                            print("🎵 Welcome message completed")
+                            # Here you could start listening for user input
+
+                        elif event_type == "Microsoft.Communication.PlayFailed":
+                            print("❌ Welcome message failed to play")
+                            print(f"📋 Play failure details: {event.get('data', {})}")
+
+                        else:
+                            print(f"📞 Unhandled event type: {event_type}")
+
                         return jsonify({"status": "received", "eventType": event_type})
 
                 return jsonify({"status": "received"})
@@ -327,6 +364,32 @@ def start_application():
                     "test_webhook": f"Send POST request to: {webhook_url}"
                 }
             })
+
+        @app.route("/test-tts")
+        async def test_tts():
+            """Test TTS functionality"""
+            try:
+                from azure.communication.callautomation import TextSource
+
+                # Test creating a TTS source
+                text_source = TextSource(
+                    text="This is a test message",
+                    voice_name="en-US-JennyNeural"
+                )
+
+                return jsonify({
+                    "status": "success",
+                    "message": "TTS TextSource created successfully",
+                    "voice_name": "en-US-JennyNeural",
+                    "test_text": "This is a test message"
+                })
+
+            except Exception as e:
+                return jsonify({
+                    "status": "error",
+                    "error": str(e),
+                    "message": "TTS TextSource creation failed"
+                })
         
         # Start the server
         port = int(os.getenv("PORT", "8000"))
