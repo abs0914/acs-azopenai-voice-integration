@@ -78,12 +78,8 @@ class VoiceLiveCallHandler:
                 self.connection = await websockets.connect(alt_url, extra_headers=headers)
                 log_message("✅ WebSocket connection established (alternative URL)")
 
-            # Configure the Voice Live session
-            log_message("⚙️ Configuring Voice Live session...")
-            await self.configure_session()
-
-            # Send initial greeting
-            log_message("🎵 Sending initial greeting...")
+            # Skip session configuration for now - just trigger response
+            log_message("🎵 Triggering initial response directly...")
             await self.send_initial_greeting()
 
             log_message("✅ Voice Live conversation started successfully")
@@ -97,24 +93,11 @@ class VoiceLiveCallHandler:
             return False
     
     async def configure_session(self):
-        """Configure the Voice Live session for vida-voice-bot agent"""
+        """Configure the Voice Live session - try minimal config first"""
+        # Try minimal session config to avoid connection closure
         session_config = {
             "type": "session.update",
             "session": {
-                "turn_detection": {
-                    "type": "azure_semantic_vad",
-                    "threshold": 0.3,
-                    "prefix_padding_ms": 200,
-                    "silence_duration_ms": 200,
-                    "remove_filler_words": False,
-                    "end_of_utterance_detection": {
-                        "model": "semantic_detection_v1",
-                        "threshold": 0.1,
-                        "timeout": 4,
-                    },
-                },
-                "input_audio_noise_reduction": {"type": "azure_deep_noise_suppression"},
-                "input_audio_echo_cancellation": {"type": "server_echo_cancellation"},
                 "voice": {
                     "name": "en-US-Emma2:DragonHDLatestNeural",
                     "type": "azure-standard",
