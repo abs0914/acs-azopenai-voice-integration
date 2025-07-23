@@ -40,8 +40,9 @@ jobs:
 
       - name: Zip artifact for deployment
         run: |
-          # Create deployment package with correct structure
-          zip release.zip ./* -r -x "venv/*" ".git/*" ".github/*" "automation/*"
+          # Create deployment package with api folder contents at root level
+          cd api
+          zip ../release.zip ./* -r
 
       - name: Upload artifact for deployment jobs
         uses: actions/upload-artifact@v4
