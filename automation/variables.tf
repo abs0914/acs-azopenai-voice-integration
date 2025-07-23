@@ -47,6 +47,12 @@ variable "custom_domain" {
 variable "openai_service_name" {
   default = "az-openai-service"
 }
+
+variable "azure_voice_live_api_key" {
+  description = "Azure AI Voice Live API key"
+  type        = string
+  sensitive   = true
+}
 variable "public_network_access_enabled" {
   default = true
 }

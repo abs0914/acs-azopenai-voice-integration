@@ -72,6 +72,12 @@ module "api" {
     AZURE_OPENAI_DEPLOYMENT_MODEL_NAME = azurerm_cognitive_deployment.openai_deployments["gpt-4o"].model[0].name
     AZURE_OPENAI_DEPLOYMENT_MODEL      = azurerm_cognitive_deployment.openai_deployments["gpt-4o"].model[0].name
     OPENAI_ASSISTANT_ID                = "asst_dEODj1Hu6Z68Ebggl13DAHPv"
+    # Azure AI Voice Live API
+    AZURE_VOICE_LIVE_ENDPOINT          = "https://vida-voice-live.cognitiveservices.azure.com/"
+    AZURE_VOICE_LIVE_API_KEY           = var.azure_voice_live_api_key
+    AZURE_VOICE_LIVE_DEPLOYMENT        = "gpt-4o-realtime-preview"
+    AZURE_VOICE_LIVE_REGION            = "eastus2"
+    VIDA_VOICE_BOT_ASSISTANT_ID        = "asst_dEODj1Hu6Z68Ebggl13DAHPv"
     # Application Settings
     CALLBACK_URI_HOST   = "https://${local.name_prefix}-api-${random_string.unique.result}.azurewebsites.net"
     CALLBACK_EVENTS_URI = "https://${local.name_prefix}-api-${random_string.unique.result}.azurewebsites.net/api/callbacks"
@@ -84,6 +90,9 @@ module "api" {
 
     REDIS_URL      = azurerm_redis_cache.redis.hostname
     REDIS_PASSWORD = azurerm_redis_cache.redis.primary_access_key
+    # Security and Performance Settings
+    WEBSITES_ENABLE_APP_SERVICE_STORAGE = "false"
+    WEBSITES_CONTAINER_START_TIME_LIMIT = "1800"
   }
   health_check_path = "/api/health"
   app_command_line  = local.api_command_line
@@ -94,12 +103,12 @@ module "api" {
 }
 
 
-# Workaround: set API_ALLOW_ORIGINS to the web app URI
+# Configure CORS with specific allowed origins for security
 resource "null_resource" "api_set_allow_origins" {
   depends_on = [module.api]
   provisioner "local-exec" {
-    # command = "az webapp config appsettings set --resource-group ${data.azurerm_resource_group.rg.name} --name ${module.api.APPSERVICE_NAME} --settings API_ALLOW_ORIGINS=${module.web.URI}"
-    command = "az webapp config appsettings set --resource-group ${data.azurerm_resource_group.rg.name} --name ${module.api.APPSERVICE_NAME} --settings API_ALLOW_ORIGINS=*"
+    # Allow Azure Communication Services and specific domains
+    command = "az webapp config appsettings set --resource-group ${data.azurerm_resource_group.rg.name} --name ${module.api.APPSERVICE_NAME} --settings API_ALLOW_ORIGINS='https://*.azurewebsites.net,https://*.azure.com,https://localhost:*'"
   }
 }
 
