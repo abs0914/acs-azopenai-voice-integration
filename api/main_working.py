@@ -74,6 +74,81 @@ def check_and_install_dependencies():
 
     return len(missing_packages) == 0
 
+async def answer_incoming_call(call_data):
+    """Answer an incoming call"""
+    try:
+        print("📞 Attempting to answer incoming call...")
+
+        # Import ACS client
+        from azure.communication.callautomation import CallAutomationClient
+        from azure.identity import DefaultAzureCredential
+
+        # Get connection string
+        connection_string = os.getenv("ACS_CONNECTION_STRING")
+        if not connection_string:
+            print("❌ ACS_CONNECTION_STRING not found")
+            return
+
+        # Create client
+        client = CallAutomationClient.from_connection_string(connection_string)
+
+        # Extract call information
+        incoming_call_context = call_data.get("incomingCallContext")
+        callback_uri = f"{os.getenv('CALLBACK_URI_HOST')}/api/callbacks"
+
+        if incoming_call_context:
+            print(f"📞 Answering call with context: {incoming_call_context}")
+
+            # Answer the call
+            answer_call_result = client.answer_call(
+                incoming_call_context=incoming_call_context,
+                callback_url=callback_uri
+            )
+
+            print(f"✅ Call answered successfully: {answer_call_result.call_connection_id}")
+            return answer_call_result
+        else:
+            print("❌ No incoming call context found")
+
+    except Exception as e:
+        print(f"❌ Error answering call: {e}")
+        print(f"📋 Traceback: {traceback.format_exc()}")
+
+async def handle_call_connected(call_connection_id, call_data):
+    """Handle a connected call"""
+    try:
+        print(f"📞 Handling connected call: {call_connection_id}")
+
+        # Import ACS client
+        from azure.communication.callautomation import CallAutomationClient
+
+        # Get connection string
+        connection_string = os.getenv("ACS_CONNECTION_STRING")
+        if not connection_string:
+            print("❌ ACS_CONNECTION_STRING not found")
+            return
+
+        # Create client
+        client = CallAutomationClient.from_connection_string(connection_string)
+        call_connection = client.get_call_connection(call_connection_id)
+
+        # Play a welcome message
+        welcome_message = "Hello! Welcome to the ACS Voice Integration. How can I help you today?"
+
+        print(f"📞 Playing welcome message: {welcome_message}")
+
+        # Play the message (you might need to adjust this based on your TTS setup)
+        play_result = call_connection.play_media_to_all(
+            play_source_info=welcome_message,
+            operation_context="welcome_message"
+        )
+
+        print(f"✅ Welcome message initiated: {play_result}")
+
+    except Exception as e:
+        print(f"❌ Error handling connected call: {e}")
+        print(f"📋 Traceback: {traceback.format_exc()}")
+
 def start_application():
     """Start the main application"""
     try:
@@ -190,8 +265,26 @@ def start_application():
                         # Log the full event for debugging
                         print(f"📞 Full event data: {event}")
 
-                        # Here you would add your call automation logic
-                        # For now, just acknowledge the event
+                        # Handle specific call events
+                        if event_type == "Microsoft.Communication.IncomingCall":
+                            print("📞 Incoming call detected - attempting to answer...")
+                            try:
+                                # Answer the incoming call
+                                await answer_incoming_call(event.get("data", {}))
+                            except Exception as e:
+                                print(f"❌ Failed to answer call: {e}")
+
+                        elif event_type == "Microsoft.Communication.CallConnected":
+                            print("📞 Call connected - starting conversation...")
+                            try:
+                                # Start the voice conversation
+                                await handle_call_connected(call_connection_id, event.get("data", {}))
+                            except Exception as e:
+                                print(f"❌ Failed to handle connected call: {e}")
+
+                        elif event_type == "Microsoft.Communication.CallDisconnected":
+                            print("📞 Call disconnected")
+
                         return jsonify({"status": "received", "eventType": event_type})
 
                 return jsonify({"status": "received"})
