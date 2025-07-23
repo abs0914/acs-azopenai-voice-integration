@@ -40,6 +40,8 @@ class MinimalHandler(BaseHTTPRequestHandler):
                 <li><a href="/files">/files</a> - File listing</li>
                 <li><a href="/test-imports">/test-imports</a> - Test Python imports</li>
                 <li><a href="/test-main-execution">/test-main-execution</a> - Test main.py execution steps</li>
+                <li><a href="/install-deps">/install-deps</a> - Install missing dependencies</li>
+                <li><a href="/start-full-app">/start-full-app</a> - Test full application startup</li>
                 </ul>
                 </body>
                 </html>
@@ -159,6 +161,69 @@ class MinimalHandler(BaseHTTPRequestHandler):
                     execution_test["env_check_traceback"] = traceback.format_exc()
 
                 response = json.dumps(execution_test, indent=2).encode()
+                self.wfile.write(response)
+
+            elif self.path == '/install-deps':
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json')
+                self.end_headers()
+
+                install_results = {}
+
+                # Try to install essential packages
+                essential_packages = [
+                    'quart==0.19.9',
+                    'requests==2.32.3',
+                    'azure-communication-callautomation==1.2.0'
+                ]
+
+                for package in essential_packages:
+                    try:
+                        import subprocess
+                        result = subprocess.run([
+                            sys.executable, '-m', 'pip', 'install', '--user', '--no-cache-dir', package
+                        ], capture_output=True, text=True, timeout=60)
+
+                        if result.returncode == 0:
+                            install_results[package] = "✅ Installed successfully"
+                        else:
+                            install_results[package] = f"❌ Failed: {result.stderr[:200]}"
+                    except Exception as e:
+                        install_results[package] = f"❌ Error: {str(e)}"
+
+                response = json.dumps({"installation_results": install_results}, indent=2).encode()
+                self.wfile.write(response)
+
+            elif self.path == '/start-full-app':
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json')
+                self.end_headers()
+
+                try:
+                    # Try to start the full application
+                    from startup import check_required_env_vars
+                    from src.core.app import CallAutomationApp
+
+                    # Check environment
+                    check_required_env_vars()
+
+                    # This would normally start the app, but we'll just test the import
+                    app_instance = CallAutomationApp()
+
+                    response = json.dumps({
+                        "status": "success",
+                        "message": "Full application can be started",
+                        "note": "Use Azure Portal to change startup command to 'python3 main.py'"
+                    }, indent=2).encode()
+
+                except Exception as e:
+                    response = json.dumps({
+                        "status": "failed",
+                        "error": str(e),
+                        "traceback": traceback.format_exc(),
+                        "suggestion": "Check /test-main-execution for detailed diagnostics"
+                    }, indent=2).encode()
+
                 self.wfile.write(response)
                 
             else:
