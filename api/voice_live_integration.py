@@ -78,8 +78,12 @@ class VoiceLiveCallHandler:
                 self.connection = await websockets.connect(alt_url, extra_headers=headers)
                 log_message("✅ WebSocket connection established (alternative URL)")
 
-            # Skip session configuration for now - just trigger response
-            log_message("🎵 Triggering initial response directly...")
+            # Configure session for proactive engagement
+            log_message("⚙️ Configuring session for proactive engagement...")
+            await self.configure_session()
+
+            # Send initial greeting
+            log_message("🎵 Sending initial greeting...")
             await self.send_initial_greeting()
 
             log_message("✅ Voice Live conversation started successfully")
@@ -93,16 +97,17 @@ class VoiceLiveCallHandler:
             return False
     
     async def configure_session(self):
-        """Configure the Voice Live session - try minimal config first"""
-        # Try minimal session config to avoid connection closure
+        """Configure the Voice Live session for proactive engagement"""
+        # Simple session config that works with proactive engagement
         session_config = {
             "type": "session.update",
             "session": {
-                "voice": {
-                    "name": "en-US-Emma2:DragonHDLatestNeural",
-                    "type": "azure-standard",
-                    "temperature": 0.8,
+                "turn_detection": {
+                    "type": "azure_semantic_vad"
                 },
+                "voice": {
+                    "name": "en-US-Emma2:DragonHDLatestNeural"
+                }
             },
             "event_id": str(uuid.uuid4())
         }
@@ -112,17 +117,36 @@ class VoiceLiveCallHandler:
         log_message("✅ Voice Live session configured")
     
     async def send_initial_greeting(self):
-        """Send initial greeting - just trigger response, let agent handle greeting"""
-        # Skip creating conversation item, just trigger response
-        # The vida-voice-bot agent should have its own greeting configured
+        """Send initial greeting - create user message to trigger proactive agent"""
+        # If proactive engagement is enabled, we need to simulate a user joining
+        # Create a user message that triggers the agent's proactive greeting
+        user_message = {
+            "type": "conversation.item.create",
+            "item": {
+                "type": "message",
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "Hello"
+                    }
+                ]
+            },
+            "event_id": str(uuid.uuid4())
+        }
+
+        log_message(f"📤 Sending user hello to trigger proactive greeting: {json.dumps(user_message, indent=2)}")
+        await self.connection.send(json.dumps(user_message))
+
+        # Now trigger response
         response_create = {
             "type": "response.create",
             "event_id": str(uuid.uuid4())
         }
 
-        log_message(f"📤 Triggering initial response: {json.dumps(response_create, indent=2)}")
+        log_message(f"📤 Triggering response: {json.dumps(response_create, indent=2)}")
         await self.connection.send(json.dumps(response_create))
-        log_message("✅ Initial response triggered - agent should speak its greeting")
+        log_message("✅ User message sent and response triggered - agent should speak proactive greeting")
     
     async def handle_audio_from_call(self, audio_data: bytes):
         """Handle audio data from ACS call and send to Voice Live"""
