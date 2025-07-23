@@ -75,31 +75,39 @@ def check_and_install_dependencies():
     return len(missing_packages) == 0
 
 async def answer_incoming_call(call_data):
-    """Answer an incoming call"""
+    """Answer an incoming call with enhanced error handling"""
     try:
         print("📞 Attempting to answer incoming call...")
-
-        # Import ACS client
-        from azure.communication.callautomation import CallAutomationClient
-        from azure.identity import DefaultAzureCredential
+        print(f"📞 Call data received: {call_data}")
 
         # Get connection string
         connection_string = os.getenv("ACS_CONNECTION_STRING")
         if not connection_string:
-            print("❌ ACS_CONNECTION_STRING not found")
-            return
-
-        # Create client
-        client = CallAutomationClient.from_connection_string(connection_string)
+            print("❌ ACS_CONNECTION_STRING not found in environment")
+            return None
 
         # Extract call information
         incoming_call_context = call_data.get("incomingCallContext")
-        callback_uri = f"{os.getenv('CALLBACK_URI_HOST')}/api/callbacks"
+        callback_uri = f"{os.getenv('CALLBACK_URI_HOST', 'https://tf-ai-aivoice-dev-api-68s3.azurewebsites.net')}/api/callbacks"
 
-        if incoming_call_context:
-            print(f"📞 Answering call with context: {incoming_call_context}")
+        print(f"📞 Callback URI: {callback_uri}")
+        print(f"📞 Incoming call context: {incoming_call_context}")
+
+        if not incoming_call_context:
+            print("❌ No incoming call context found in call data")
+            print(f"📞 Available keys in call_data: {list(call_data.keys())}")
+            return None
+
+        try:
+            # Import ACS client
+            from azure.communication.callautomation import CallAutomationClient
+
+            # Create client
+            client = CallAutomationClient.from_connection_string(connection_string)
+            print("✅ ACS client created successfully")
 
             # Answer the call
+            print(f"📞 Answering call with context: {incoming_call_context[:50]}...")
             answer_call_result = client.answer_call(
                 incoming_call_context=incoming_call_context,
                 callback_url=callback_uri
@@ -107,37 +115,52 @@ async def answer_incoming_call(call_data):
 
             print(f"✅ Call answered successfully: {answer_call_result.call_connection_id}")
             return answer_call_result
-        else:
-            print("❌ No incoming call context found")
+
+        except ImportError as import_error:
+            print(f"❌ Failed to import ACS client: {import_error}")
+            return None
+        except Exception as acs_error:
+            print(f"❌ ACS client error: {acs_error}")
+            print(f"📋 ACS Traceback: {traceback.format_exc()}")
+            return None
 
     except Exception as e:
         print(f"❌ Error answering call: {e}")
         print(f"📋 Traceback: {traceback.format_exc()}")
+        return None
 
 async def handle_call_connected(call_connection_id, call_data):
-    """Handle a connected call using Voice Live"""
+    """Handle a connected call - try Voice Live first, fallback to TTS"""
     try:
-        print(f"📞 Handling connected call with Voice Live: {call_connection_id}")
+        print(f"📞 Handling connected call: {call_connection_id}")
 
-        # Import Voice Live integration
-        from voice_live_integration import start_voice_live_for_call
+        # First, always try simple TTS to ensure something works
+        await fallback_to_simple_tts(call_connection_id)
 
-        # Start Voice Live conversation
-        success = await start_voice_live_for_call(call_connection_id)
+        # Then try to start Voice Live in the background (optional)
+        try:
+            print("🎤 Attempting to start Voice Live conversation...")
+            from voice_live_integration import start_voice_live_for_call
+            success = await start_voice_live_for_call(call_connection_id)
 
-        if success:
-            print("✅ Voice Live conversation started successfully")
-            # The Voice Live handler will automatically send the greeting
-            # and handle the conversation flow
-        else:
-            print("❌ Failed to start Voice Live, falling back to simple TTS")
-            await fallback_to_simple_tts(call_connection_id)
+            if success:
+                print("✅ Voice Live conversation started successfully")
+            else:
+                print("⚠️ Voice Live failed to start, but TTS already played")
+
+        except ImportError:
+            print("⚠️ Voice Live integration not available, using TTS only")
+        except Exception as voice_error:
+            print(f"⚠️ Voice Live error (TTS already played): {voice_error}")
 
     except Exception as e:
         print(f"❌ Error handling connected call: {e}")
         print(f"📋 Traceback: {traceback.format_exc()}")
-        # Fallback to simple TTS if Voice Live fails
-        await fallback_to_simple_tts(call_connection_id)
+        # Last resort fallback
+        try:
+            await fallback_to_simple_tts(call_connection_id)
+        except Exception as fallback_error:
+            print(f"❌ Even fallback TTS failed: {fallback_error}")
 
 async def fallback_to_simple_tts(call_connection_id):
     """Fallback to simple TTS if Voice Live fails"""
@@ -310,6 +333,8 @@ def start_application():
                                 await handle_call_connected(call_connection_id, event.get("data", {}))
                             except Exception as e:
                                 print(f"❌ Failed to handle connected call: {e}")
+                                print(f"📋 Traceback: {traceback.format_exc()}")
+                                # Continue processing other events even if this fails
 
                         elif event_type == "Microsoft.Communication.CallDisconnected":
                             print("📞 Call disconnected - ending Voice Live conversation")
