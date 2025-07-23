@@ -31,30 +31,45 @@ class VoiceLiveCallHandler:
         """Start a Voice Live conversation for an ACS call"""
         try:
             print(f"🎤 Starting Voice Live conversation for call: {call_connection_id}")
+            print(f"🔗 Endpoint: {self.endpoint}")
+            print(f"🤖 Agent ID: {self.agent_id}")
+            print(f"📦 Deployment: {self.deployment}")
+
             self.call_connection_id = call_connection_id
-            
+
             # Create WebSocket connection to Voice Live with agent ID
             url = f"{self.endpoint.rstrip('/')}/voice-agent/realtime?api-version=2025-05-01-preview&model={self.deployment}&agent_id={self.agent_id}"
             url = url.replace("https://", "wss://")
+
+            print(f"🌐 WebSocket URL: {url}")
 
             headers = {
                 "api-key": self.api_key,
                 "x-ms-client-request-id": str(uuid.uuid4())
             }
-            
+
+            print(f"📋 Headers: {list(headers.keys())}")
+            print("🔌 Attempting WebSocket connection...")
+
             self.connection = await websockets.connect(url, extra_headers=headers)
-            
+            print("✅ WebSocket connection established")
+
             # Configure the Voice Live session
+            print("⚙️ Configuring Voice Live session...")
             await self.configure_session()
-            
+
             # Send initial greeting
+            print("🎵 Sending initial greeting...")
             await self.send_initial_greeting()
-            
+
             print("✅ Voice Live conversation started successfully")
             return True
-            
+
         except Exception as e:
             print(f"❌ Failed to start Voice Live conversation: {e}")
+            print(f"📋 Error details: {type(e).__name__}: {str(e)}")
+            import traceback
+            print(f"📋 Traceback: {traceback.format_exc()}")
             return False
     
     async def configure_session(self):
@@ -86,6 +101,7 @@ class VoiceLiveCallHandler:
             "event_id": str(uuid.uuid4())
         }
         
+        print(f"📤 Sending session config: {json.dumps(session_config, indent=2)}")
         await self.connection.send(json.dumps(session_config))
         print("✅ Voice Live session configured")
     
@@ -106,16 +122,18 @@ class VoiceLiveCallHandler:
             "event_id": str(uuid.uuid4())
         }
         
+        print(f"📤 Sending greeting: {json.dumps(greeting, indent=2)}")
         await self.connection.send(json.dumps(greeting))
-        
+
         # Trigger response generation
         response_create = {
             "type": "response.create",
             "event_id": str(uuid.uuid4())
         }
-        
+
+        print(f"📤 Triggering response: {json.dumps(response_create, indent=2)}")
         await self.connection.send(json.dumps(response_create))
-        print("✅ Initial greeting sent")
+        print("✅ Initial greeting sent and response triggered")
     
     async def handle_audio_from_call(self, audio_data: bytes):
         """Handle audio data from ACS call and send to Voice Live"""

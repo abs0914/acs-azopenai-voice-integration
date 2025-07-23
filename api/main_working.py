@@ -499,6 +499,40 @@ def start_application():
                     "error": str(e),
                     "message": "Failed to install websockets"
                 })
+
+        @app.route("/test-voice-live-connection")
+        async def test_voice_live_connection():
+            """Test Voice Live connection manually"""
+            try:
+                from voice_live_integration import VoiceLiveCallHandler
+
+                handler = VoiceLiveCallHandler()
+                print("🧪 Testing Voice Live connection manually...")
+
+                # Try to start a test conversation
+                success = await handler.start_voice_conversation("test-call-123")
+
+                if success:
+                    # End the test conversation
+                    await handler.end_conversation()
+                    return jsonify({
+                        "status": "success",
+                        "message": "Voice Live connection test successful",
+                        "details": "WebSocket connection established and greeting sent"
+                    })
+                else:
+                    return jsonify({
+                        "status": "error",
+                        "message": "Voice Live connection test failed",
+                        "details": "Check application logs for detailed error information"
+                    })
+
+            except Exception as e:
+                return jsonify({
+                    "status": "error",
+                    "error": str(e),
+                    "message": "Voice Live connection test failed with exception"
+                })
         
         # Start the server
         port = int(os.getenv("PORT", "8000"))
