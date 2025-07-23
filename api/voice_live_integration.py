@@ -77,7 +77,7 @@ class VoiceLiveCallHandler:
                 "input_audio_noise_reduction": {"type": "azure_deep_noise_suppression"},
                 "input_audio_echo_cancellation": {"type": "server_echo_cancellation"},
                 "voice": {
-                    "name": "en-US-Aria:DragonHDLatestNeural",  # Match your Speech Playground config
+                    "name": "en-US-Emma2:DragonHDLatestNeural",  # Emma2 Dragon HD Latest voice
                     "type": "azure-standard",
                     "temperature": 0.8,
                 },
@@ -99,7 +99,7 @@ class VoiceLiveCallHandler:
                 "content": [
                     {
                         "type": "text",
-                        "text": "Hello! Welcome to Vida Voice Bot powered by Azure Communication Services and Azure AI. I'm your intelligent voice assistant. How can I help you today?"
+                        "text": "Hello! My Name is Emma your Vida Voice Bot. I'm your intelligent voice assistant. How can I help you today?"
                     }
                 ]
             },
