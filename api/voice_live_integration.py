@@ -116,48 +116,30 @@ class VoiceLiveCallHandler:
                 "input_audio_noise_reduction": {"type": "azure_deep_noise_suppression"},
                 "input_audio_echo_cancellation": {"type": "server_echo_cancellation"},
                 "voice": {
-                    "name": "en-US-Emma2:DragonHDLatestNeural",  # Emma2 Dragon HD Latest voice
+                    "name": "en-US-Emma2:DragonHDLatestNeural",
                     "type": "azure-standard",
                     "temperature": 0.8,
                 },
-                # Agent ID is specified in the WebSocket URL
             },
             "event_id": str(uuid.uuid4())
         }
         
-        print(f"📤 Sending session config: {json.dumps(session_config, indent=2)}")
+        log_message(f"📤 Sending session config: {json.dumps(session_config, indent=2)}")
         await self.connection.send(json.dumps(session_config))
-        print("✅ Voice Live session configured")
+        log_message("✅ Voice Live session configured")
     
     async def send_initial_greeting(self):
-        """Send initial greeting message from vida-voice-bot"""
-        greeting = {
-            "type": "conversation.item.create",
-            "item": {
-                "type": "message",
-                "role": "assistant",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": "Hello! My Name is Emma your Vida Voice Bot. I'm your intelligent voice assistant. How can I help you today?"
-                    }
-                ]
-            },
-            "event_id": str(uuid.uuid4())
-        }
-        
-        print(f"📤 Sending greeting: {json.dumps(greeting, indent=2)}")
-        await self.connection.send(json.dumps(greeting))
-
-        # Trigger response generation
+        """Send initial greeting - just trigger response, let agent handle greeting"""
+        # Skip creating conversation item, just trigger response
+        # The vida-voice-bot agent should have its own greeting configured
         response_create = {
             "type": "response.create",
             "event_id": str(uuid.uuid4())
         }
 
-        print(f"📤 Triggering response: {json.dumps(response_create, indent=2)}")
+        log_message(f"📤 Triggering initial response: {json.dumps(response_create, indent=2)}")
         await self.connection.send(json.dumps(response_create))
-        print("✅ Initial greeting sent and response triggered")
+        log_message("✅ Initial response triggered - agent should speak its greeting")
     
     async def handle_audio_from_call(self, audio_data: bytes):
         """Handle audio data from ACS call and send to Voice Live"""
