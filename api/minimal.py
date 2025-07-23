@@ -40,7 +40,8 @@ class MinimalHandler(BaseHTTPRequestHandler):
                 <li><a href="/files">/files</a> - File listing</li>
                 <li><a href="/test-imports">/test-imports</a> - Test Python imports</li>
                 <li><a href="/test-main-execution">/test-main-execution</a> - Test main.py execution steps</li>
-                <li><a href="/install-deps">/install-deps</a> - Install missing dependencies</li>
+                <li><a href="/install-deps">/install-deps</a> - Install essential dependencies</li>
+                <li><a href="/install-all-deps">/install-all-deps</a> - Install ALL dependencies</li>
                 <li><a href="/start-full-app">/start-full-app</a> - Test full application startup</li>
                 </ul>
                 </body>
@@ -170,11 +171,21 @@ class MinimalHandler(BaseHTTPRequestHandler):
 
                 install_results = {}
 
-                # Try to install essential packages
+                # Try to install all missing packages
                 essential_packages = [
+                    'python-dotenv==1.0.1',
                     'quart==0.19.9',
                     'requests==2.32.3',
-                    'azure-communication-callautomation==1.2.0'
+                    'azure-communication-callautomation==1.2.0',
+                    'azure-core==1.32.0',
+                    'azure-identity==1.15.0',
+                    'azure-eventgrid==4.20.0',
+                    'azure-cosmos==4.8.0',
+                    'openai==1.57.2',
+                    'redis==5.2.1',
+                    'websockets==12.0',
+                    'aiohttp==3.10.0',
+                    'numpy==1.26.0'
                 ]
 
                 for package in essential_packages:
@@ -190,6 +201,57 @@ class MinimalHandler(BaseHTTPRequestHandler):
                             install_results[package] = f"❌ Failed: {result.stderr[:200]}"
                     except Exception as e:
                         install_results[package] = f"❌ Error: {str(e)}"
+
+                response = json.dumps({"installation_results": install_results}, indent=2).encode()
+                self.wfile.write(response)
+
+            elif self.path == '/install-all-deps':
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json')
+                self.end_headers()
+
+                install_results = {}
+
+                # Install all required packages
+                all_packages = [
+                    'python-dotenv==1.0.1',
+                    'quart==0.19.9',
+                    'requests==2.32.3',
+                    'azure-communication-callautomation==1.2.0',
+                    'azure-core==1.32.0',
+                    'azure-identity==1.15.0',
+                    'azure-eventgrid==4.20.0',
+                    'azure-cosmos==4.8.0',
+                    'openai==1.57.2',
+                    'redis==5.2.1',
+                    'websockets==12.0',
+                    'aiohttp==3.10.0',
+                    'numpy==1.26.0'
+                ]
+
+                success_count = 0
+                for package in all_packages:
+                    try:
+                        import subprocess
+                        result = subprocess.run([
+                            sys.executable, '-m', 'pip', 'install', '--user', '--no-cache-dir', package
+                        ], capture_output=True, text=True, timeout=120)
+
+                        if result.returncode == 0:
+                            install_results[package] = "✅ Installed successfully"
+                            success_count += 1
+                        else:
+                            install_results[package] = f"❌ Failed: {result.stderr[:200]}"
+                    except Exception as e:
+                        install_results[package] = f"❌ Error: {str(e)}"
+
+                # Try to reload sys.path
+                try:
+                    import site
+                    site.main()
+                    install_results["_system_info"] = f"✅ Installed {success_count}/{len(all_packages)} packages. Python path refreshed."
+                except Exception as e:
+                    install_results["_system_info"] = f"⚠️ Installed {success_count}/{len(all_packages)} packages. Path refresh failed: {str(e)}"
 
                 response = json.dumps({"installation_results": install_results}, indent=2).encode()
                 self.wfile.write(response)
