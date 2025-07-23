@@ -2,8 +2,8 @@
 # This script configures the actual API key and deploys the solution
 
 param(
-    [Parameter(Mandatory=$false)]
-    [string]$VoiceLiveApiKey = "D0ccvKqf20m8g8wXHnqyF7BFypUJygfQXrjIOm2kMfJASaNvXKu0JQQJ99BGACHYHv6XJ3w3AAAAACOGv7Z2"
+    [Parameter(Mandatory=$true)]
+    [string]$VoiceLiveApiKey
 )
 
 Write-Host "🔐 Secure Azure Web App Deployment" -ForegroundColor Green
@@ -67,16 +67,7 @@ Write-Host "✅ API key removed from terraform.tfvars for security" -ForegroundC
 Write-Host "📤 Step 4: Committing and pushing changes..." -ForegroundColor Blue
 
 git add .
-git commit -m "Fix: Resolve Azure Web App deployment issues
-
-- Fix GitHub Actions workflow dependency installation path
-- Add Azure Voice Live API configuration to Terraform
-- Update application startup configuration with proper script
-- Implement security hardening (CORS, container settings)
-- Add comprehensive deployment guides and validation tools
-- Configure all required environment variables for voice integration
-
-This resolves the critical deployment failures and enables full voice integration functionality."
+git commit -m "Fix: Resolve Azure Web App deployment issues - Fix GitHub Actions workflow dependency installation path - Add Azure Voice Live API configuration to Terraform - Update application startup configuration with proper script - Implement security hardening (CORS, container settings) - Add comprehensive deployment guides and validation tools - Configure all required environment variables for voice integration - This resolves the critical deployment failures and enables full voice integration functionality."
 
 git push origin main
 
