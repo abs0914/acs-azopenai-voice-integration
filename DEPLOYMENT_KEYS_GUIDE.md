@@ -7,12 +7,15 @@ This guide shows you exactly how to add the actual API keys and deploy the Azure
 
 Based on your memory, I've already configured the following keys:
 
-### ✅ Azure Voice Live API Key
+### ⚠️ Azure Voice Live API Key
 **Location**: `automation/terraform.tfvars`
-**Status**: ✅ **CONFIGURED**
+**Status**: ⚠️ **NEEDS YOUR ACTUAL KEY**
 ```
-azure_voice_live_api_key = "D0ccvKqf20m8g8wXHnqyF7BFypUJygfQXrjIOm2kMfJASaNvXKu0JQQJ99BGACHYHv6XJ3w3AAAAACOGv7Z2"
+azure_voice_live_api_key = "YOUR_AZURE_VOICE_LIVE_API_KEY_HERE"
 ```
+
+**To configure**: Replace `YOUR_AZURE_VOICE_LIVE_API_KEY_HERE` with your actual API key:
+`D0ccvKqf20m8g8wXHnqyF7BFypUJygfQXrjIOm2kMfJASaNvXKu0JQQJ99BGACHYHv6XJ3w3AAAAACOGv7Z2`
 
 ### ✅ Azure Voice Live Endpoint
 **Location**: `automation/app.tf`
