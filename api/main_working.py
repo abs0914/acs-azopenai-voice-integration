@@ -16,37 +16,62 @@ if current_dir not in sys.path:
     sys.path.insert(0, current_dir)
 
 def check_and_install_dependencies():
-    """Check and install missing dependencies"""
+    """Check and install missing dependencies with enhanced error handling"""
     required_packages = [
-        'python-dotenv',
-        'quart', 
-        'azure-communication-callautomation',
-        'azure-core',
-        'azure-identity',
-        'openai'
+        ('python-dotenv', 'dotenv'),
+        ('quart', 'quart'),
+        ('azure-communication-callautomation', 'azure.communication.callautomation'),
+        ('azure-core', 'azure.core'),
+        ('azure-identity', 'azure.identity'),
+        ('openai', 'openai'),
+        ('requests', 'requests')
     ]
-    
+
     missing_packages = []
-    for package in required_packages:
+    for pip_name, import_name in required_packages:
         try:
-            __import__(package.replace('-', '_'))
-            print(f"✅ {package} available")
+            __import__(import_name)
+            print(f"✅ {pip_name} available")
         except ImportError:
-            missing_packages.append(package)
-            print(f"❌ {package} missing")
-    
+            missing_packages.append(pip_name)
+            print(f"❌ {pip_name} missing")
+
     if missing_packages:
         print(f"🔧 Installing {len(missing_packages)} missing packages...")
         import subprocess
+
+        # Try different installation methods
+        install_methods = [
+            ['--user', '--no-cache-dir'],
+            ['--user', '--no-cache-dir', '--force-reinstall'],
+            ['--no-cache-dir'],
+            ['--user']
+        ]
+
         for package in missing_packages:
-            try:
-                subprocess.run([
-                    sys.executable, '-m', 'pip', 'install', '--user', '--no-cache-dir', package
-                ], check=True, capture_output=True)
-                print(f"✅ Installed {package}")
-            except Exception as e:
-                print(f"❌ Failed to install {package}: {e}")
-    
+            installed = False
+            for method in install_methods:
+                try:
+                    cmd = [sys.executable, '-m', 'pip', 'install'] + method + [package]
+                    result = subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=120)
+                    print(f"✅ Installed {package} with method {method}")
+                    installed = True
+                    break
+                except Exception as e:
+                    print(f"⚠️ Method {method} failed for {package}: {e}")
+                    continue
+
+            if not installed:
+                print(f"❌ All installation methods failed for {package}")
+
+    # Refresh Python path
+    try:
+        import site
+        site.main()
+        print("✅ Python path refreshed")
+    except Exception as e:
+        print(f"⚠️ Failed to refresh Python path: {e}")
+
     return len(missing_packages) == 0
 
 def start_application():
