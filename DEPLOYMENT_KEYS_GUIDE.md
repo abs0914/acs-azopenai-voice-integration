@@ -15,7 +15,7 @@ azure_voice_live_api_key = "YOUR_AZURE_VOICE_LIVE_API_KEY_HERE"
 ```
 
 **To configure**: Replace `YOUR_AZURE_VOICE_LIVE_API_KEY_HERE` with your actual API key:
-`D0ccvKqf20m8g8wXHnqyF7BFypUJygfQXrjIOm2kMfJASaNvXKu0JQQJ99BGACHYHv6XJ3w3AAAAACOGv7Z2`
+`YOUR_ACTUAL_AZURE_VOICE_LIVE_API_KEY_HERE`
 
 ### ✅ Azure Voice Live Endpoint
 **Location**: `automation/app.tf`
