@@ -115,12 +115,37 @@ async def answer_incoming_call(call_data):
         print(f"📋 Traceback: {traceback.format_exc()}")
 
 async def handle_call_connected(call_connection_id, call_data):
-    """Handle a connected call"""
+    """Handle a connected call using Voice Live"""
     try:
-        print(f"📞 Handling connected call: {call_connection_id}")
+        print(f"📞 Handling connected call with Voice Live: {call_connection_id}")
+
+        # Import Voice Live integration
+        from voice_live_integration import start_voice_live_for_call
+
+        # Start Voice Live conversation
+        success = await start_voice_live_for_call(call_connection_id)
+
+        if success:
+            print("✅ Voice Live conversation started successfully")
+            # The Voice Live handler will automatically send the greeting
+            # and handle the conversation flow
+        else:
+            print("❌ Failed to start Voice Live, falling back to simple TTS")
+            await fallback_to_simple_tts(call_connection_id)
+
+    except Exception as e:
+        print(f"❌ Error handling connected call: {e}")
+        print(f"📋 Traceback: {traceback.format_exc()}")
+        # Fallback to simple TTS if Voice Live fails
+        await fallback_to_simple_tts(call_connection_id)
+
+async def fallback_to_simple_tts(call_connection_id):
+    """Fallback to simple TTS if Voice Live fails"""
+    try:
+        print(f"🔄 Using fallback TTS for call: {call_connection_id}")
 
         # Import ACS client
-        from azure.communication.callautomation import CallAutomationClient
+        from azure.communication.callautomation import CallAutomationClient, TextSource
 
         # Get connection string
         connection_string = os.getenv("ACS_CONNECTION_STRING")
@@ -132,47 +157,25 @@ async def handle_call_connected(call_connection_id, call_data):
         client = CallAutomationClient.from_connection_string(connection_string)
         call_connection = client.get_call_connection(call_connection_id)
 
-        # Play a welcome message using TTS
-        welcome_message = "Hello! Welcome to the ACS Voice Integration. How can I help you today?"
+        # Simple welcome message
+        welcome_message = "Hello! Welcome to the ACS Voice Integration. Please hold while we connect you to our voice assistant."
 
-        print(f"📞 Playing welcome message: {welcome_message}")
+        # Create TTS source
+        text_source = TextSource(
+            text=welcome_message,
+            voice_name="en-US-JennyNeural"
+        )
 
-        try:
-            # Import TTS source
-            from azure.communication.callautomation import TextSource
+        # Play the message
+        play_result = call_connection.play_media_to_all(
+            play_source=text_source,
+            operation_context="fallback_welcome"
+        )
 
-            # Create TTS source
-            text_source = TextSource(
-                text=welcome_message,
-                voice_name="en-US-JennyNeural"  # Use a clear female voice
-            )
-
-            # Play the message using TTS
-            play_result = call_connection.play_media_to_all(
-                play_source=text_source,
-                operation_context="welcome_message"
-            )
-
-            print(f"✅ Welcome message initiated with TTS: {play_result}")
-
-        except Exception as tts_error:
-            print(f"❌ TTS failed, trying simple text: {tts_error}")
-
-            # Fallback: try without TTS
-            try:
-                play_result = call_connection.play_media_to_all(
-                    play_source=welcome_message,
-                    operation_context="welcome_message_fallback"
-                )
-                print(f"✅ Fallback message initiated: {play_result}")
-            except Exception as fallback_error:
-                print(f"❌ Fallback also failed: {fallback_error}")
-
-                # Last resort: just log that call is connected
-                print("📞 Call connected but unable to play welcome message")
+        print(f"✅ Fallback TTS message initiated: {play_result}")
 
     except Exception as e:
-        print(f"❌ Error handling connected call: {e}")
+        print(f"❌ Fallback TTS also failed: {e}")
         print(f"📋 Traceback: {traceback.format_exc()}")
 
 def start_application():
@@ -309,7 +312,12 @@ def start_application():
                                 print(f"❌ Failed to handle connected call: {e}")
 
                         elif event_type == "Microsoft.Communication.CallDisconnected":
-                            print("📞 Call disconnected")
+                            print("📞 Call disconnected - ending Voice Live conversation")
+                            try:
+                                from voice_live_integration import end_voice_live_for_call
+                                await end_voice_live_for_call()
+                            except Exception as e:
+                                print(f"❌ Error ending Voice Live conversation: {e}")
 
                         elif event_type == "Microsoft.Communication.PlayCompleted":
                             print("🎵 Welcome message completed")
@@ -389,6 +397,37 @@ def start_application():
                     "status": "error",
                     "error": str(e),
                     "message": "TTS TextSource creation failed"
+                })
+
+        @app.route("/test-voice-live")
+        async def test_voice_live():
+            """Test Voice Live configuration"""
+            try:
+                voice_live_config = {
+                    "endpoint": os.getenv("AZURE_VOICE_LIVE_ENDPOINT"),
+                    "deployment": os.getenv("AZURE_VOICE_LIVE_DEPLOYMENT", "vida-voice-bot"),
+                    "api_key_configured": "✅" if os.getenv("AZURE_VOICE_LIVE_API_KEY") else "❌",
+                }
+
+                # Test if we can import the Voice Live integration
+                try:
+                    from voice_live_integration import VoiceLiveCallHandler
+                    handler = VoiceLiveCallHandler()
+                    voice_live_config["integration_status"] = "✅ Voice Live integration available"
+                except Exception as e:
+                    voice_live_config["integration_status"] = f"❌ Integration error: {str(e)}"
+
+                return jsonify({
+                    "status": "success",
+                    "voice_live_config": voice_live_config,
+                    "message": "Voice Live configuration check completed"
+                })
+
+            except Exception as e:
+                return jsonify({
+                    "status": "error",
+                    "error": str(e),
+                    "message": "Voice Live configuration test failed"
                 })
         
         # Start the server
