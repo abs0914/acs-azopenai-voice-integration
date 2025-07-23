@@ -140,26 +140,100 @@ def start_application():
         async def test_azure_imports():
             """Test Azure SDK imports"""
             import_results = {}
-            
+
             try:
                 from azure.communication.callautomation import CallAutomationClient
                 import_results["CallAutomationClient"] = "✅ Available"
             except Exception as e:
                 import_results["CallAutomationClient"] = f"❌ Failed: {str(e)}"
-            
+
             try:
                 from azure.identity import DefaultAzureCredential
                 import_results["DefaultAzureCredential"] = "✅ Available"
             except Exception as e:
                 import_results["DefaultAzureCredential"] = f"❌ Failed: {str(e)}"
-            
+
             try:
                 import openai
                 import_results["openai"] = "✅ Available"
             except Exception as e:
                 import_results["openai"] = f"❌ Failed: {str(e)}"
-            
+
             return jsonify({"azure_imports": import_results})
+
+        # Event Grid webhook endpoints
+        @app.route("/api/callbacks", methods=["POST"])
+        async def handle_event_grid_webhook():
+            """Handle Event Grid webhook for ACS call automation events"""
+            try:
+                data = await request.get_json()
+                print(f"📞 Received Event Grid webhook: {data}")
+
+                # Handle Event Grid validation
+                if isinstance(data, list) and len(data) > 0:
+                    event = data[0]
+
+                    # Event Grid subscription validation
+                    if event.get("eventType") == "Microsoft.EventGrid.SubscriptionValidationEvent":
+                        validation_code = event["data"]["validationCode"]
+                        print(f"✅ Event Grid validation code: {validation_code}")
+                        return jsonify({"validationResponse": validation_code})
+
+                    # Handle ACS call automation events
+                    elif event.get("eventType", "").startswith("Microsoft.Communication."):
+                        event_type = event.get("eventType")
+                        call_connection_id = event.get("data", {}).get("callConnectionId")
+
+                        print(f"📞 ACS Event: {event_type}")
+                        print(f"📞 Call Connection ID: {call_connection_id}")
+
+                        # Log the full event for debugging
+                        print(f"📞 Full event data: {event}")
+
+                        # Here you would add your call automation logic
+                        # For now, just acknowledge the event
+                        return jsonify({"status": "received", "eventType": event_type})
+
+                return jsonify({"status": "received"})
+
+            except Exception as e:
+                print(f"❌ Error handling webhook: {str(e)}")
+                print(f"📋 Traceback: {traceback.format_exc()}")
+                return jsonify({"error": str(e)}), 500
+
+        @app.route("/api/callbacks", methods=["GET"])
+        async def webhook_info():
+            """Provide information about the webhook endpoint"""
+            return jsonify({
+                "webhook_url": f"{os.getenv('CALLBACK_URI_HOST', 'https://tf-ai-aivoice-dev-api-68s3.azurewebsites.net')}/api/callbacks",
+                "methods": ["POST"],
+                "description": "Event Grid webhook for ACS call automation events",
+                "supported_events": [
+                    "Microsoft.EventGrid.SubscriptionValidationEvent",
+                    "Microsoft.Communication.CallConnected",
+                    "Microsoft.Communication.CallDisconnected",
+                    "Microsoft.Communication.RecognizeCompleted",
+                    "Microsoft.Communication.PlayCompleted"
+                ]
+            })
+
+        @app.route("/webhook-test")
+        async def webhook_test():
+            """Test webhook configuration"""
+            webhook_url = f"{os.getenv('CALLBACK_URI_HOST', 'https://tf-ai-aivoice-dev-api-68s3.azurewebsites.net')}/api/callbacks"
+
+            return jsonify({
+                "webhook_endpoint": webhook_url,
+                "callback_uri_host": os.getenv('CALLBACK_URI_HOST'),
+                "environment_check": {
+                    "ACS_CONNECTION_STRING": "✅ Set" if os.getenv("ACS_CONNECTION_STRING") else "❌ Missing",
+                    "CALLBACK_URI_HOST": "✅ Set" if os.getenv("CALLBACK_URI_HOST") else "❌ Missing"
+                },
+                "instructions": {
+                    "event_grid_subscription": f"Use this URL for Event Grid subscription: {webhook_url}",
+                    "test_webhook": f"Send POST request to: {webhook_url}"
+                }
+            })
         
         # Start the server
         port = int(os.getenv("PORT", "8000"))
