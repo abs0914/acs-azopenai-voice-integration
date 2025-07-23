@@ -22,7 +22,7 @@ class VoiceLiveCallHandler:
     
     def __init__(self):
         self.endpoint = os.getenv("AZURE_VOICE_LIVE_ENDPOINT")
-        self.deployment = os.getenv("AZURE_VOICE_LIVE_DEPLOYMENT", "vida-voice-bot")
+        self.deployment = os.getenv("AZURE_VOICE_LIVE_DEPLOYMENT", "gpt-4o-realtime-preview")
         self.api_key = os.getenv("AZURE_VOICE_LIVE_API_KEY")
         self.connection = None
         self.call_connection_id = None

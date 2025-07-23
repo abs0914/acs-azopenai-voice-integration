@@ -24,7 +24,8 @@ def check_and_install_dependencies():
         ('azure-core', 'azure.core'),
         ('azure-identity', 'azure.identity'),
         ('openai', 'openai'),
-        ('requests', 'requests')
+        ('requests', 'requests'),
+        ('websockets', 'websockets')
     ]
 
     missing_packages = []
@@ -322,9 +323,14 @@ def start_application():
                             print("📞 Incoming call detected - attempting to answer...")
                             try:
                                 # Answer the incoming call
-                                await answer_incoming_call(event.get("data", {}))
+                                result = await answer_incoming_call(event.get("data", {}))
+                                if result:
+                                    print(f"✅ Call answered successfully: {result.call_connection_id}")
+                                else:
+                                    print("❌ Failed to answer call - no result returned")
                             except Exception as e:
                                 print(f"❌ Failed to answer call: {e}")
+                                print(f"📋 Answer call traceback: {traceback.format_exc()}")
 
                         elif event_type == "Microsoft.Communication.CallConnected":
                             print("📞 Call connected - starting conversation...")
