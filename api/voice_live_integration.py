@@ -10,9 +10,8 @@ import logging
 import uuid
 from typing import Optional
 
-# Voice Live imports (from your code)
-from websockets.asyncio.client import connect as ws_connect
-from websockets.asyncio.client import ClientConnection as AsyncWebsocket
+# Voice Live imports - compatible with websockets 12.0
+import websockets
 from websockets.exceptions import WebSocketException
 
 logger = logging.getLogger(__name__)
@@ -42,7 +41,7 @@ class VoiceLiveCallHandler:
                 "x-ms-client-request-id": str(uuid.uuid4())
             }
             
-            self.connection = await ws_connect(url, additional_headers=headers)
+            self.connection = await websockets.connect(url, extra_headers=headers)
             
             # Configure the Voice Live session
             await self.configure_session()
