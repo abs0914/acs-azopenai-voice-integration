@@ -435,8 +435,9 @@ def start_application():
             """Test Voice Live configuration"""
             try:
                 voice_live_config = {
-                    "endpoint": os.getenv("AZURE_VOICE_LIVE_ENDPOINT"),
+                    "endpoint": os.getenv("AZURE_VOICE_LIVE_ENDPOINT", "https://vida-voice-live.cognitiveservices.azure.com/"),
                     "deployment": os.getenv("AZURE_VOICE_LIVE_DEPLOYMENT", "vida-voice-bot"),
+                    "agent_id": "asst_dEODj1Hu6Z68Ebggl13DAHPv",
                     "api_key_configured": "✅" if os.getenv("AZURE_VOICE_LIVE_API_KEY") else "❌",
                 }
 

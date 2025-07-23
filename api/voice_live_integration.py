@@ -20,9 +20,10 @@ class VoiceLiveCallHandler:
     """Handles Voice Live integration for ACS calls"""
     
     def __init__(self):
-        self.endpoint = os.getenv("AZURE_VOICE_LIVE_ENDPOINT")
-        self.deployment = os.getenv("AZURE_VOICE_LIVE_DEPLOYMENT", "gpt-4o-realtime-preview")
-        self.api_key = os.getenv("AZURE_VOICE_LIVE_API_KEY")
+        self.endpoint = os.getenv("AZURE_VOICE_LIVE_ENDPOINT", "https://vida-voice-live.cognitiveservices.azure.com/")
+        self.deployment = os.getenv("AZURE_VOICE_LIVE_DEPLOYMENT", "vida-voice-bot")
+        self.api_key = os.getenv("AZURE_VOICE_LIVE_API_KEY", "D0ccvKqf20m8g8wXHnqyF7BFypUJygfQXrjIOm2kMfJASaNvXKu0JQQJ99BGACHYHv6XJ3w3AAAAACOGv7Z2")
+        self.agent_id = "asst_dEODj1Hu6Z68Ebggl13DAHPv"  # vida-voice-bot agent ID
         self.connection = None
         self.call_connection_id = None
         
@@ -32,10 +33,10 @@ class VoiceLiveCallHandler:
             print(f"🎤 Starting Voice Live conversation for call: {call_connection_id}")
             self.call_connection_id = call_connection_id
             
-            # Create WebSocket connection to Voice Live
-            url = f"{self.endpoint.rstrip('/')}/voice-agent/realtime?api-version=2025-05-01-preview&model={self.deployment}"
+            # Create WebSocket connection to Voice Live with agent ID
+            url = f"{self.endpoint.rstrip('/')}/voice-agent/realtime?api-version=2025-05-01-preview&model={self.deployment}&agent_id={self.agent_id}"
             url = url.replace("https://", "wss://")
-            
+
             headers = {
                 "api-key": self.api_key,
                 "x-ms-client-request-id": str(uuid.uuid4())
@@ -57,7 +58,7 @@ class VoiceLiveCallHandler:
             return False
     
     async def configure_session(self):
-        """Configure the Voice Live session"""
+        """Configure the Voice Live session for vida-voice-bot agent"""
         session_config = {
             "type": "session.update",
             "session": {
@@ -65,7 +66,8 @@ class VoiceLiveCallHandler:
                     "type": "azure_semantic_vad",
                     "threshold": 0.3,
                     "prefix_padding_ms": 200,
-                    "silence_duration_ms": 1000,
+                    "silence_duration_ms": 200,
+                    "remove_filler_words": False,
                     "end_of_utterance_detection": {
                         "model": "semantic_detection_v1",
                         "threshold": 0.1,
@@ -75,10 +77,11 @@ class VoiceLiveCallHandler:
                 "input_audio_noise_reduction": {"type": "azure_deep_noise_suppression"},
                 "input_audio_echo_cancellation": {"type": "server_echo_cancellation"},
                 "voice": {
-                    "name": "en-US-JennyNeural",  # Clear, professional voice
+                    "name": "en-US-Aria:DragonHDLatestNeural",  # Match your Speech Playground config
                     "type": "azure-standard",
-                    "temperature": 0.7,
+                    "temperature": 0.8,
                 },
+                "agent_id": self.agent_id,  # Specify the vida-voice-bot agent
             },
             "event_id": str(uuid.uuid4())
         }
@@ -87,7 +90,7 @@ class VoiceLiveCallHandler:
         print("✅ Voice Live session configured")
     
     async def send_initial_greeting(self):
-        """Send initial greeting message"""
+        """Send initial greeting message from vida-voice-bot"""
         greeting = {
             "type": "conversation.item.create",
             "item": {
@@ -96,7 +99,7 @@ class VoiceLiveCallHandler:
                 "content": [
                     {
                         "type": "text",
-                        "text": "Hello! Welcome to the ACS Voice Integration powered by Azure AI. I'm your voice assistant. How can I help you today?"
+                        "text": "Hello! Welcome to Vida Voice Bot powered by Azure Communication Services and Azure AI. I'm your intelligent voice assistant. How can I help you today?"
                     }
                 ]
             },
