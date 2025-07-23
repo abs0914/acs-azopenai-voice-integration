@@ -82,9 +82,17 @@ class VoiceLiveCallHandler:
             log_message("⚙️ Configuring session for proactive engagement...")
             await self.configure_session()
 
-            # Send initial greeting
-            log_message("🎵 Sending initial greeting...")
-            await self.send_initial_greeting()
+            # Don't send any messages - let the proactive agent handle everything
+            log_message("🎵 Session configured - letting proactive agent handle greeting...")
+
+            # Just wait a moment for the agent to potentially send a proactive greeting
+            import asyncio
+            await asyncio.sleep(1)
+            log_message("✅ Connection established - proactive agent should handle conversation")
+
+            # Start listening for messages from the agent
+            log_message("👂 Starting to listen for agent messages...")
+            await self.listen_for_messages()
 
             log_message("✅ Voice Live conversation started successfully")
             return True
@@ -115,6 +123,24 @@ class VoiceLiveCallHandler:
         log_message(f"📤 Sending session config: {json.dumps(session_config, indent=2)}")
         await self.connection.send(json.dumps(session_config))
         log_message("✅ Voice Live session configured")
+
+    async def listen_for_messages(self):
+        """Listen for incoming messages from the agent for a short time"""
+        try:
+            import asyncio
+            # Listen for messages for 3 seconds to see if agent sends proactive greeting
+            for i in range(3):
+                try:
+                    message = await asyncio.wait_for(self.connection.recv(), timeout=1.0)
+                    log_message(f"📨 Received from agent: {message}")
+                except asyncio.TimeoutError:
+                    log_message(f"⏰ Waiting for agent message... ({i+1}/3)")
+                    continue
+                except Exception as e:
+                    log_message(f"❌ Error receiving message: {e}")
+                    break
+        except Exception as e:
+            log_message(f"❌ Error in listen_for_messages: {e}")
     
     async def send_initial_greeting(self):
         """Send initial greeting - create user message to trigger proactive agent"""
