@@ -460,6 +460,44 @@ def start_application():
                     "error": str(e),
                     "message": "Voice Live configuration test failed"
                 })
+
+        @app.route("/install-websockets")
+        async def install_websockets():
+            """Install websockets dependency for Voice Live"""
+            try:
+                import subprocess
+
+                # Install websockets
+                result = subprocess.run([
+                    sys.executable, '-m', 'pip', 'install', '--user', '--no-cache-dir', 'websockets==12.0'
+                ], capture_output=True, text=True, timeout=120)
+
+                if result.returncode == 0:
+                    # Try to import to verify
+                    try:
+                        import websockets
+                        return jsonify({
+                            "status": "success",
+                            "message": "Websockets installed and imported successfully",
+                            "websockets_version": websockets.__version__ if hasattr(websockets, '__version__') else "unknown"
+                        })
+                    except ImportError:
+                        return jsonify({
+                            "status": "partial_success",
+                            "message": "Websockets installed but import failed - may need app restart"
+                        })
+                else:
+                    return jsonify({
+                        "status": "error",
+                        "message": f"Installation failed: {result.stderr}"
+                    })
+
+            except Exception as e:
+                return jsonify({
+                    "status": "error",
+                    "error": str(e),
+                    "message": "Failed to install websockets"
+                })
         
         # Start the server
         port = int(os.getenv("PORT", "8000"))
