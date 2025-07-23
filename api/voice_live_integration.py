@@ -37,8 +37,9 @@ class VoiceLiveCallHandler:
 
             self.call_connection_id = call_connection_id
 
-            # Create WebSocket connection to Voice Live with agent ID
-            url = f"{self.endpoint.rstrip('/')}/voice-agent/realtime?api-version=2025-05-01-preview&model={self.deployment}&agent_id={self.agent_id}"
+            # Create WebSocket connection to Voice Live - try different URL format
+            # Option 1: With agent_id parameter
+            url = f"{self.endpoint.rstrip('/')}/voice-agent/realtime?api-version=2025-05-01-preview&model={self.agent_id}"
             url = url.replace("https://", "wss://")
 
             print(f"🌐 WebSocket URL: {url}")
@@ -51,8 +52,19 @@ class VoiceLiveCallHandler:
             print(f"📋 Headers: {list(headers.keys())}")
             print("🔌 Attempting WebSocket connection...")
 
-            self.connection = await websockets.connect(url, extra_headers=headers)
-            print("✅ WebSocket connection established")
+            try:
+                self.connection = await websockets.connect(url, extra_headers=headers)
+                print("✅ WebSocket connection established")
+            except Exception as ws_error:
+                print(f"❌ First connection attempt failed: {ws_error}")
+
+                # Try alternative URL format without agent_id
+                alt_url = f"{self.endpoint.rstrip('/')}/voice-agent/realtime?api-version=2025-05-01-preview&model={self.deployment}"
+                alt_url = alt_url.replace("https://", "wss://")
+                print(f"🔄 Trying alternative URL: {alt_url}")
+
+                self.connection = await websockets.connect(alt_url, extra_headers=headers)
+                print("✅ WebSocket connection established (alternative URL)")
 
             # Configure the Voice Live session
             print("⚙️ Configuring Voice Live session...")
@@ -96,7 +108,7 @@ class VoiceLiveCallHandler:
                     "type": "azure-standard",
                     "temperature": 0.8,
                 },
-                "agent_id": self.agent_id,  # Specify the vida-voice-bot agent
+                # Agent ID is specified in the WebSocket URL
             },
             "event_id": str(uuid.uuid4())
         }
