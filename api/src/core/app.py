@@ -6,7 +6,11 @@ from azure.eventgrid import EventGridEvent, SystemEventNames
 from azure.core.messaging import CloudEvent
 from azure.communication.callautomation import (
     PhoneNumberIdentifier,
-    CallAutomationClient
+    CallAutomationClient,
+    MediaStreamingOptions,
+    MediaStreamingContentType,
+    MediaStreamingAudioChannelType,
+    MediaStreamingTransportType
 )
 from azure.core.exceptions import AzureError
 import asyncio
@@ -95,7 +99,12 @@ class CallAutomationApp:
         )
 
         # WebSocket endpoint for media streaming
-        self.app.websocket("/ws")(self.handle_websocket_media_streaming)
+        @self.app.websocket("/ws")
+        async def websocket_handler():
+            from quart import websocket
+            self.logger.info("WebSocket connection attempt detected")
+            self.logger.info(f"WebSocket headers: {dict(websocket.headers) if hasattr(websocket, 'headers') else 'No headers'}")
+            return await self.handle_websocket_media_streaming(websocket)
 
         # Test endpoint for Voice Live call simulation
         self.app.route("/api/testVoiceLiveCall", methods=["POST"])(
@@ -364,12 +373,31 @@ class CallAutomationApp:
     async def _answer_call_async(self, incoming_call_context, callback_url):
         self.logger.info("_answer_call_async event")
 
-        # Answer call - Voice Live integration will be started in CallConnected event
-        self.logger.info("Answering call for Voice Live integration")
+        # Create WebSocket URI for media streaming
+        # Convert HTTPS to WSS for WebSocket connection
+        callback_host = self.config.CALLBACK_URI_HOST
+        if callback_host.startswith("https://"):
+            websocket_uri = callback_host.replace("https://", "wss://") + "/ws"
+        else:
+            websocket_uri = f"wss://{callback_host}/ws"
+        self.logger.info(f"Setting up media streaming with WebSocket URI: {websocket_uri}")
+
+        # Configure media streaming options for Voice Live integration
+        media_streaming_options = MediaStreamingOptions(
+            transport_url=websocket_uri,
+            transport_type=MediaStreamingTransportType.WEBSOCKET,
+            content_type=MediaStreamingContentType.AUDIO,
+            audio_channel_type=MediaStreamingAudioChannelType.MIXED,
+            start_media_streaming=True
+        )
+
+        # Answer call with media streaming enabled
+        self.logger.info("Answering call with Voice Live media streaming enabled")
         return self.call_automation_client.answer_call(
             incoming_call_context=incoming_call_context,
             cognitive_services_endpoint=self.config.COGNITIVE_SERVICE_ENDPOINT,
-            callback_url=callback_url
+            callback_url=callback_url,
+            media_streaming=media_streaming_options
         )
 
     async def _process_incoming_call(self, event: EventGridEvent):
@@ -640,35 +668,46 @@ class CallAutomationApp:
             )
 
     async def handle_websocket_media_streaming(self, websocket):
-        """Handle WebSocket media streaming for Voice Live integration"""
-        self.logger.info("WebSocket connection established for media streaming")
+        """Handle WebSocket media streaming from Azure Communication Services"""
+        self.logger.info("ACS WebSocket connection established for media streaming")
+
+        # Extract call connection ID from headers
+        call_connection_id = None
+        correlation_id = None
 
         try:
-            # Extract call connection ID from query parameters or headers
-            call_connection_id = None
+            # Get headers from WebSocket connection - ACS sends specific headers
+            headers = {}
+            if hasattr(websocket, 'headers'):
+                headers = dict(websocket.headers)
+            elif hasattr(websocket, 'request_headers'):
+                headers = dict(websocket.request_headers)
 
-            # Wait for initial message to get call connection ID
-            initial_message = await websocket.receive()
+            # ACS sends headers with capital letters, try both cases
+            call_connection_id = (headers.get('X-Ms-Call-Connection-Id') or
+                                headers.get('x-ms-call-connection-id'))
+            correlation_id = (headers.get('X-Ms-Call-Correlation-Id') or
+                            headers.get('x-ms-call-correlation-id'))
 
-            if isinstance(initial_message, str):
-                try:
-                    data = json.loads(initial_message)
-                    call_connection_id = data.get("callConnectionId")
-                    self.logger.info(f"Received call connection ID: {call_connection_id}")
-                except json.JSONDecodeError:
-                    self.logger.error("Failed to parse initial WebSocket message")
-                    await websocket.close(1000, "Invalid initial message format")
-                    return
+            self.logger.info(f"ACS WebSocket connection - Call ID: {call_connection_id}, Correlation ID: {correlation_id}")
+            self.logger.info(f"WebSocket headers: {headers}")
 
+            # If no call connection ID from headers, use correlation ID or generate one
             if not call_connection_id:
-                self.logger.error("No call connection ID provided in WebSocket connection")
-                await websocket.close(1000, "Call connection ID required")
-                return
+                if correlation_id:
+                    call_connection_id = correlation_id
+                    self.logger.info(f"Using correlation ID as call connection ID: {call_connection_id}")
+                else:
+                    call_connection_id = "acs-media-stream"  # Fallback ID
+                    self.logger.info(f"No ACS headers found, using fallback ID: {call_connection_id}")
 
-            # Start Voice Live session for this call
+            self.logger.info(f"Using call connection ID: {call_connection_id}")
+
+            # Start Voice Live session for this call with WebSocket connection for bidirectional streaming
             voice_live_started = await self.audio_streaming_service.start_bidirectional_streaming(
                 call_connection_id,
-                f"{self.config.CALLBACK_URI_HOST}/ws"
+                f"{self.config.CALLBACK_URI_HOST}/ws",
+                websocket_connection=websocket
             )
 
             if not voice_live_started:
@@ -676,38 +715,59 @@ class CallAutomationApp:
                 await websocket.close(1000, "Failed to start Voice Live session")
                 return
 
-            self.logger.info(f"Voice Live session started for call {call_connection_id}")
+            self.logger.info(f"Voice Live session started for ACS call {call_connection_id}")
 
-            # Handle incoming media streaming data
-            async for message in websocket:
+            # Handle incoming ACS media streaming data
+            while True:
                 try:
+                    message = await websocket.receive()
+
                     if isinstance(message, str):
-                        # Handle JSON messages (control messages)
+                        # Parse ACS audio streaming message
                         data = json.loads(message)
-                        await self.audio_streaming_service.handle_media_streaming_event(
-                            call_connection_id, data
-                        )
-                    elif isinstance(message, bytes):
-                        # Handle binary audio data
-                        await self.audio_streaming_service.handle_incoming_audio(
-                            call_connection_id, message
-                        )
+                        kind = data.get("kind")
+
+                        if kind == "AudioMetadata":
+                            self.logger.info(f"Received ACS audio metadata: {data}")
+                            # Configure audio settings based on metadata
+                            await self.audio_streaming_service.configure_audio_settings(
+                                call_connection_id, data.get("audioMetadata", {})
+                            )
+                        elif kind == "AudioData":
+                            # Forward audio data to Voice Live
+                            audio_data = data.get("audioData", {})
+                            await self.audio_streaming_service.process_incoming_audio(
+                                call_connection_id, audio_data
+                            )
+                        else:
+                            self.logger.debug(f"Received ACS message kind: {kind}")
                     else:
-                        self.logger.warning(f"Received unknown message type: {type(message)}")
+                        self.logger.warning(f"Received non-string message: {type(message)}")
 
                 except json.JSONDecodeError as e:
-                    self.logger.error(f"Failed to parse WebSocket message: {e}")
+                    self.logger.error(f"Failed to parse ACS WebSocket message: {e}")
                 except Exception as e:
-                    self.logger.error(f"Error processing WebSocket message: {e}")
+                    self.logger.error(f"Error processing ACS WebSocket message: {e}")
+                    break
 
         except Exception as e:
-            self.logger.error(f"WebSocket error: {e}")
+            self.logger.error(f"ACS WebSocket error: {e}")
         finally:
             # Clean up when WebSocket closes
             if call_connection_id:
                 await self.audio_streaming_service.stop_bidirectional_streaming(call_connection_id)
-                self.logger.info(f"Cleaned up Voice Live session for call {call_connection_id}")
+                self.logger.info(f"Cleaned up Voice Live session for ACS call {call_connection_id}")
 
     def run(self, host: str = "0.0.0.0", port: int = 8000):
-        """Run the application"""
-        self.app.run(host=host, port=port)
+        """Run the application using Hypercorn ASGI server"""
+        import asyncio
+        from hypercorn.config import Config
+        from hypercorn.asyncio import serve
+
+        config = Config()
+        config.bind = [f"{host}:{port}"]
+        config.use_reloader = False
+        config.accesslog = "-"  # Log to stdout
+
+        self.logger.info(f"Starting Hypercorn server on {host}:{port}")
+        asyncio.run(serve(self.app, config))

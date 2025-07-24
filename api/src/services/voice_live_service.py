@@ -216,6 +216,9 @@ class VoiceLiveService:
             # Configure the session with vida-voice-bot agent
             await connection.session.update(
                 session={
+                    "modalities": ["audio", "text"],
+                    "input_audio_format": "pcm16",
+                    "output_audio_format": "pcm16",
                     "turn_detection": {
                         "type": "azure_semantic_vad",
                         "threshold": 0.3,
@@ -272,19 +275,70 @@ class VoiceLiveService:
     
     async def receive_voice_live_events(self, call_connection_id: str, event_handler: Callable):
         """Receive and process events from Voice Live API"""
+        self.logger.info(f"🎯 receive_voice_live_events called for call {call_connection_id}")
+
         if call_connection_id not in self.active_connections:
             self.logger.error(f"No active Voice Live connection for call {call_connection_id}")
             return
-            
+
         try:
             connection = self.active_connections[call_connection_id]
+            self.logger.info(f"Starting to listen for Voice Live events for call {call_connection_id}")
+            self.logger.info(f"Connection state: {connection.closed if hasattr(connection, 'closed') else 'unknown'}")
+
+            event_count = 0
             async for raw_event in connection:
                 try:
+                    event_count += 1
+                    self.logger.info(f"Received Voice Live message #{event_count} for call {call_connection_id}: {raw_event[:200]}...")
                     event = json.loads(raw_event)
+                    self.logger.info(f"Parsed Voice Live event #{event_count} for call {call_connection_id}: {event.get('type', 'unknown')}")
                     await event_handler(event)
                 except json.JSONDecodeError as e:
                     self.logger.error(f"Failed to decode Voice Live event: {e}")
                 except Exception as e:
                     self.logger.error(f"Error processing Voice Live event: {e}")
+
+            self.logger.info(f"Voice Live event loop ended for call {call_connection_id}. Total events received: {event_count}")
         except Exception as e:
             self.logger.error(f"Error receiving Voice Live events: {e}")
+            import traceback
+            self.logger.error(f"Full traceback: {traceback.format_exc()}")
+        finally:
+            self.logger.info(f"🎯 receive_voice_live_events completed for call {call_connection_id}")
+
+    async def send_audio_data(self, session_id: str, audio_bytes: bytes):
+        """Send audio data to Voice Live session"""
+        try:
+            # Find the connection by session ID (for now, use call_connection_id)
+            connection = None
+            for call_id, conn in self.active_connections.items():
+                if call_id == session_id:
+                    connection = conn
+                    break
+
+            if not connection:
+                self.logger.error(f"No active Voice Live connection for session {session_id}")
+                return
+
+            # Convert audio bytes to base64 and send to Voice Live
+            audio_base64 = base64.b64encode(audio_bytes).decode("utf-8")
+            param = {
+                "type": "input_audio_buffer.append",
+                "audio": audio_base64,
+                "event_id": str(uuid.uuid4())
+            }
+            await connection.send(json.dumps(param))
+            self.logger.debug(f"Sent {len(audio_bytes)} bytes of audio to Voice Live session {session_id}")
+
+        except Exception as e:
+            self.logger.error(f"Error sending audio data to Voice Live session {session_id}: {e}")
+
+    async def end_session(self, session_id: str):
+        """End a Voice Live session"""
+        try:
+            # For now, session_id is the same as call_connection_id
+            await self.close_voice_live_session(session_id)
+            self.logger.info(f"Ended Voice Live session {session_id}")
+        except Exception as e:
+            self.logger.error(f"Error ending Voice Live session {session_id}: {e}")
