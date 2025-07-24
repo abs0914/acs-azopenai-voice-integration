@@ -59,6 +59,7 @@ class CallAutomationApp:
             cosmosdb_service=self.cosmosdb_service,
             voice_live_service=self.voice_live_service,
             audio_streaming_service=self.audio_streaming_service,
+            config=self.config,
         )
 
         self.setup_routes()
@@ -92,6 +93,9 @@ class CallAutomationApp:
         self.app.route("/api/testVoiceLive", methods=["GET"])(
             self.test_voice_live_connection
         )
+
+        # WebSocket endpoint for media streaming
+        self.app.websocket("/ws")(self.handle_websocket_media_streaming)
 
         # Test endpoint for Voice Live call simulation
         self.app.route("/api/testVoiceLiveCall", methods=["POST"])(
@@ -359,11 +363,13 @@ class CallAutomationApp:
 
     async def _answer_call_async(self, incoming_call_context, callback_url):
         self.logger.info("_answer_call_async event")
-        # Directly assign without awaiting
+
+        # Answer call - Voice Live integration will be started in CallConnected event
+        self.logger.info("Answering call for Voice Live integration")
         return self.call_automation_client.answer_call(
             incoming_call_context=incoming_call_context,
             cognitive_services_endpoint=self.config.COGNITIVE_SERVICE_ENDPOINT,
-            callback_url=callback_url,
+            callback_url=callback_url
         )
 
     async def _process_incoming_call(self, event: EventGridEvent):
@@ -632,6 +638,75 @@ class CallAutomationApp:
                 status=StatusCodes.SERVER_ERROR,
                 headers={"Content-Type": "application/json"}
             )
+
+    async def handle_websocket_media_streaming(self, websocket):
+        """Handle WebSocket media streaming for Voice Live integration"""
+        self.logger.info("WebSocket connection established for media streaming")
+
+        try:
+            # Extract call connection ID from query parameters or headers
+            call_connection_id = None
+
+            # Wait for initial message to get call connection ID
+            initial_message = await websocket.receive()
+
+            if isinstance(initial_message, str):
+                try:
+                    data = json.loads(initial_message)
+                    call_connection_id = data.get("callConnectionId")
+                    self.logger.info(f"Received call connection ID: {call_connection_id}")
+                except json.JSONDecodeError:
+                    self.logger.error("Failed to parse initial WebSocket message")
+                    await websocket.close(1000, "Invalid initial message format")
+                    return
+
+            if not call_connection_id:
+                self.logger.error("No call connection ID provided in WebSocket connection")
+                await websocket.close(1000, "Call connection ID required")
+                return
+
+            # Start Voice Live session for this call
+            voice_live_started = await self.audio_streaming_service.start_bidirectional_streaming(
+                call_connection_id,
+                f"{self.config.CALLBACK_URI_HOST}/ws"
+            )
+
+            if not voice_live_started:
+                self.logger.error(f"Failed to start Voice Live session for call {call_connection_id}")
+                await websocket.close(1000, "Failed to start Voice Live session")
+                return
+
+            self.logger.info(f"Voice Live session started for call {call_connection_id}")
+
+            # Handle incoming media streaming data
+            async for message in websocket:
+                try:
+                    if isinstance(message, str):
+                        # Handle JSON messages (control messages)
+                        data = json.loads(message)
+                        await self.audio_streaming_service.handle_media_streaming_event(
+                            call_connection_id, data
+                        )
+                    elif isinstance(message, bytes):
+                        # Handle binary audio data
+                        await self.audio_streaming_service.handle_incoming_audio(
+                            call_connection_id, message
+                        )
+                    else:
+                        self.logger.warning(f"Received unknown message type: {type(message)}")
+
+                except json.JSONDecodeError as e:
+                    self.logger.error(f"Failed to parse WebSocket message: {e}")
+                except Exception as e:
+                    self.logger.error(f"Error processing WebSocket message: {e}")
+
+        except Exception as e:
+            self.logger.error(f"WebSocket error: {e}")
+        finally:
+            # Clean up when WebSocket closes
+            if call_connection_id:
+                await self.audio_streaming_service.stop_bidirectional_streaming(call_connection_id)
+                self.logger.info(f"Cleaned up Voice Live session for call {call_connection_id}")
 
     def run(self, host: str = "0.0.0.0", port: int = 8000):
         """Run the application"""

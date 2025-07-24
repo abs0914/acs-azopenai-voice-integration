@@ -21,13 +21,15 @@ class EventHandlers:
                  openai_service: OpenAIService,
                  cosmosdb_service: CosmosDBService,
                  voice_live_service: VoiceLiveService,
-                 audio_streaming_service: AudioStreamingService):
+                 audio_streaming_service: AudioStreamingService,
+                 config):
         self.call_handler = call_handler
         self.cache_service = cache_service
         self.openai_service = openai_service
         self.cosmosdb_service = cosmosdb_service
         self.voice_live_service = voice_live_service
         self.audio_streaming_service = audio_streaming_service
+        self.config = config
         self.max_retry = 2
         self._setup_context_handlers()
         # Initialize logger
@@ -111,42 +113,49 @@ class EventHandlers:
             await self.cache_service.set(f"current_session_id:{call_connection_id}", call_connection_id)
             await self.cache_service.set(f"current_call_id:{call_connection_id}", call_connection_id)
 
-            participant_id = await self.cache_service.get(f"participant_id:{call_connection_id}")
-            payload_dict = await self.cache_service.get(f"payload_dict:{call_connection_id}")
+            # Try to get participant info from cache, but don't depend on it for Voice Live
+            participant_id = None
+            payload_dict = None
+            try:
+                participant_id = await self.cache_service.get(f"participant_id:{call_connection_id}")
+                payload_dict = await self.cache_service.get(f"payload_dict:{call_connection_id}")
+            except Exception as e:
+                self.logger.warning(f"Cache service unavailable, proceeding without cached data: {e}")
 
-            if participant_id:
-                # Start bidirectional audio streaming with Voice Live API
-                websocket_uri = f"wss://your-websocket-endpoint/{call_connection_id}"  # This should be your WebSocket endpoint
+            # Start Voice Live session immediately when call is connected
+            # Don't wait for participant_id from cache since media streaming is already configured
+            self.logger.info(f"Starting Voice Live session for call {call_connection_id}")
+            streaming_started = await self.audio_streaming_service.start_bidirectional_streaming(
+                call_connection_id,
+                f"{self.config.CALLBACK_URI_HOST}/ws"
+            )
 
-                streaming_started = await self.audio_streaming_service.start_bidirectional_streaming(
+            if streaming_started:
+                # Configure Voice Live session with vida-voice-bot agent
+                await self.audio_streaming_service.configure_voice_live_session(
                     call_connection_id,
-                    websocket_uri
+                    assistant_id=None  # Will use default VIDA_VOICE_BOT_ASSISTANT_ID from config
                 )
 
-                if streaming_started:
-                    # Configure Voice Live session with vida-voice-bot agent
-                    await self.audio_streaming_service.configure_voice_live_session(
-                        call_connection_id,
-                        assistant_id=None  # Will use default VIDA_VOICE_BOT_ASSISTANT_ID from config
-                    )
+                # Send initial greeting through Voice Live API
+                client_name = payload_dict.get('client_name', 'there') if payload_dict else 'there'
+                hello_message = f"Hello {client_name}! {ConversationPrompts.HELLO}. Is this a good time to speak?"
 
-                    # Send initial greeting through Voice Live API
-                    hello_message = f"Hello {payload_dict.get('client_name', '')}! {ConversationPrompts.HELLO}. Is this a good time to speak?"
-
-                    # Store conversation context
+                # Try to store conversation context if cache is available
+                try:
                     await self.cache_service.set(f"conversation_context:{call_connection_id}", {
-                        "payload": payload_dict,
+                        "payload": payload_dict or {},
                         "initial_greeting": hello_message,
                         "participant_id": participant_id
                     })
+                except Exception as e:
+                    self.logger.warning(f"Could not store conversation context in cache: {e}")
 
-                    self.logger.info(f"Voice Live session started for call {call_connection_id}")
-                else:
-                    self.logger.error(f"Failed to start Voice Live streaming for call {call_connection_id}")
-                    # Fallback to traditional approach if Voice Live fails
-                    await self._fallback_to_traditional_approach(call_connection_id, participant_id, payload_dict)
+                self.logger.info(f"Voice Live session started successfully for call {call_connection_id}")
             else:
-                self.logger.info("Participant ID not available yet. Waiting for ParticipantsUpdated event.")
+                self.logger.error(f"Failed to start Voice Live streaming for call {call_connection_id}")
+                # Fallback to traditional approach if Voice Live fails
+                await self._fallback_to_traditional_approach(call_connection_id, participant_id, payload_dict)
 
         except Exception as e:
             self.logger.error(f"Error in handle_call_connected: {str(e)}", exc_info=True)
