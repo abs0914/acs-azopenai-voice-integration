@@ -49,9 +49,9 @@ class VoiceLiveCallHandler:
 
             self.call_connection_id = call_connection_id
 
-            # Create WebSocket connection to Voice Live - try different URL format
-            # Option 1: With agent_id parameter
-            url = f"{self.endpoint.rstrip('/')}/voice-agent/realtime?api-version=2025-05-01-preview&model={self.agent_id}"
+            # Create WebSocket connection to Voice Live - use base model instead of agent ID
+            # Use gpt-4o-realtime-preview instead of specific agent ID
+            url = f"{self.endpoint.rstrip('/')}/voice-agent/realtime?api-version=2025-05-01-preview&model={self.deployment}"
             url = url.replace("https://", "wss://")
 
             log_message(f"🌐 WebSocket URL: {url}")
@@ -82,13 +82,9 @@ class VoiceLiveCallHandler:
             log_message("⚙️ Configuring session for proactive engagement...")
             await self.configure_session()
 
-            # Don't send any messages - let the proactive agent handle everything
-            log_message("🎵 Session configured - letting proactive agent handle greeting...")
-
-            # Just wait a moment for the agent to potentially send a proactive greeting
-            import asyncio
-            await asyncio.sleep(1)
-            log_message("✅ Connection established - proactive agent should handle conversation")
+            # Since we're using base model, send a custom greeting
+            log_message("🎵 Sending custom Emma greeting...")
+            await self.send_custom_greeting()
 
             # Start listening for messages from the agent
             log_message("👂 Starting to listen for agent messages...")
@@ -141,6 +137,37 @@ class VoiceLiveCallHandler:
                     break
         except Exception as e:
             log_message(f"❌ Error in listen_for_messages: {e}")
+
+    async def send_custom_greeting(self):
+        """Send custom Emma greeting using base model"""
+        # Create assistant message with Emma's greeting
+        greeting_message = {
+            "type": "conversation.item.create",
+            "item": {
+                "type": "message",
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "Hello! My Name is Emma your Vida Voice Bot. I'm your intelligent voice assistant. How can I help you today?"
+                    }
+                ]
+            },
+            "event_id": str(uuid.uuid4())
+        }
+
+        log_message(f"📤 Sending Emma greeting: {json.dumps(greeting_message, indent=2)}")
+        await self.connection.send(json.dumps(greeting_message))
+
+        # Trigger response to speak the greeting
+        response_create = {
+            "type": "response.create",
+            "event_id": str(uuid.uuid4())
+        }
+
+        log_message(f"📤 Triggering response: {json.dumps(response_create, indent=2)}")
+        await self.connection.send(json.dumps(response_create))
+        log_message("✅ Emma greeting sent and response triggered")
     
     async def send_initial_greeting(self):
         """Send initial greeting - create user message to trigger proactive agent"""
