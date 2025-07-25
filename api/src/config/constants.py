@@ -19,6 +19,8 @@ class EventTypes(str, Enum):
     RECOGNIZE_FAILED = "Microsoft.Communication.RecognizeFailed"
     CALL_DISCONNECTED = "Microsoft.Communication.CallDisconnected"
     PARTICIPANTS_UPDATED = "Microsoft.Communication.ParticipantsUpdated"
+    MEDIA_STREAMING_STARTED = "Microsoft.Communication.MediaStreamingStarted"
+    MEDIA_STREAMING_STOPPED = "Microsoft.Communication.MediaStreamingStopped"
 
 
 class ErrorMessages:

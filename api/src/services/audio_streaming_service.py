@@ -94,8 +94,8 @@ class AudioStreamingService:
             task = asyncio.create_task(self._process_voice_live_events(call_connection_id))
             self.logger.info(f"Voice Live event processing task created: {task}")
 
-            # Send initial conversation trigger to Voice Live
-            await self._trigger_initial_response(call_connection_id)
+            # Initial response is already triggered in create_voice_live_session
+            # await self._trigger_initial_response(call_connection_id)
 
             self.logger.info(f"Voice Live session started for call {call_connection_id}")
             return True
@@ -189,14 +189,23 @@ class AudioStreamingService:
 
             elif event_type == "response.done":
                 self.logger.info(f"Voice Live response completed for call {call_connection_id}")
-                
+
+            elif event_type == "response.audio_transcript.done":
+                self.logger.info(f"Voice Live audio transcript completed for call {call_connection_id}")
+
+            elif event_type == "response.content_part.done":
+                self.logger.info(f"Voice Live content part completed for call {call_connection_id}")
+
+            elif event_type == "response.output_item.done":
+                self.logger.info(f"Voice Live output item completed for call {call_connection_id}")
+
             elif event_type == "error":
                 error_message = event.get("error", {}).get("message", "Unknown error")
                 self.logger.error(f"Voice Live API error for call {call_connection_id}: {error_message}")
-                
+
             elif event_type == "session.updated":
                 self.logger.info(f"Voice Live session updated for call {call_connection_id}")
-                
+
             else:
                 self.logger.info(f"Unhandled Voice Live event type: {event_type} for call {call_connection_id}")
 
@@ -209,41 +218,22 @@ class AudioStreamingService:
             if call_connection_id in self.active_streams:
                 voice_live_connection = self.active_streams[call_connection_id]["voice_live_connection"]
 
-                # Try multiple approaches to trigger Voice Live response
-                import json
+                # Check if connection is valid
+                if voice_live_connection is None:
+                    self.logger.error(f"Voice Live connection is None for call {call_connection_id}")
+                    return
 
-                # Approach 1: Send a conversation item to simulate user saying "hello"
-                conversation_item = {
-                    "type": "conversation.item.create",
-                    "item": {
-                        "type": "message",
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "input_text",
-                                "text": "Hello"
-                            }
-                        ]
-                    }
-                }
+                # Check if connection has send method
+                if not hasattr(voice_live_connection, 'send'):
+                    self.logger.error(f"Voice Live connection does not have send method for call {call_connection_id}")
+                    return
 
-                await voice_live_connection.send(json.dumps(conversation_item))
-                self.logger.info(f"Sent conversation item to Voice Live for call {call_connection_id}")
-
-                # Approach 2: Send response.create to trigger assistant response
-                response_create = {
-                    "type": "response.create",
-                    "response": {
-                        "modalities": ["audio", "text"],
-                        "instructions": "Please greet the caller and introduce yourself as a helpful AI assistant."
-                    }
-                }
-
-                await voice_live_connection.send(json.dumps(response_create))
-                self.logger.info(f"Triggered initial Voice Live response for call {call_connection_id}")
+                # Initial response is now handled in create_voice_live_session
+                # This method is kept for backward compatibility but does nothing
+                self.logger.info(f"Initial response already triggered during session creation for call {call_connection_id}")
 
         except Exception as e:
-            self.logger.error(f"Error triggering initial Voice Live response: {e}")
+            self.logger.error(f"Error in _trigger_initial_response: {e}")
             import traceback
             self.logger.error(f"Full traceback: {traceback.format_exc()}")
 
@@ -366,7 +356,8 @@ class AudioStreamingService:
                         "threshold": 0.3,
                         "prefix_padding_ms": 200,
                         "silence_duration_ms": 200,
-                        "remove_filler_words": False
+                        "remove_filler_words": False,
+                        "end_of_utterance_detection": None
                     },
                     "input_audio_noise_reduction": {"type": "azure_deep_noise_suppression"},
                     "input_audio_echo_cancellation": {"type": "server_echo_cancellation"},

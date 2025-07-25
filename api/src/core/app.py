@@ -10,7 +10,8 @@ from azure.communication.callautomation import (
     MediaStreamingOptions,
     MediaStreamingContentType,
     MediaStreamingAudioChannelType,
-    MediaStreamingTransportType
+    MediaStreamingTransportType,
+    TextSource
 )
 from azure.core.exceptions import AzureError
 import asyncio
@@ -76,6 +77,10 @@ class CallAutomationApp:
         self.app.route("/api/callbacks/<context_id>", methods=["POST"])(
             self.handle_callback
         )
+        # EventGrid webhook validation endpoint
+        self.app.route("/api/callback", methods=["POST"])(
+            self.handle_eventgrid_validation
+        )
         self.app.route("/api/incomingCall", methods=["POST"])(
             self.incoming_call_handler
         )
@@ -102,7 +107,15 @@ class CallAutomationApp:
         @self.app.websocket("/ws")
         async def websocket_handler():
             from quart import websocket
-            self.logger.info("WebSocket connection attempt detected")
+            self.logger.info("🎯 WebSocket connection attempt detected on /ws")
+            self.logger.info(f"WebSocket headers: {dict(websocket.headers) if hasattr(websocket, 'headers') else 'No headers'}")
+            return await self.handle_websocket_media_streaming(websocket)
+
+        # Alternative WebSocket endpoint for media streaming
+        @self.app.websocket("/api/media-streaming")
+        async def websocket_handler_alt():
+            from quart import websocket
+            self.logger.info("🎯 WebSocket connection attempt detected on /api/media-streaming")
             self.logger.info(f"WebSocket headers: {dict(websocket.headers) if hasattr(websocket, 'headers') else 'No headers'}")
             return await self.handle_websocket_media_streaming(websocket)
 
@@ -303,6 +316,44 @@ class CallAutomationApp:
             self.logger.error(f"Error in _process_outbound_call: {str(e)}", exc_info=True)
             raise
 
+    async def handle_eventgrid_validation(self):
+        """Handle EventGrid webhook validation and incoming call events"""
+        try:
+            self.logger.info("Received EventGrid webhook request")
+
+            # Get JSON data with minimal processing for speed
+            events = await request.json
+
+            # Process first event quickly for validation
+            if events and len(events) > 0:
+                first_event = events[0]
+                event_type = first_event.get("eventType", "")
+
+                # Handle EventGrid subscription validation IMMEDIATELY
+                if event_type == "Microsoft.EventGrid.SubscriptionValidationEvent":
+                    validation_code = first_event.get("data", {}).get("validationCode")
+                    if validation_code:
+                        self.logger.info(f"EventGrid validation successful: {validation_code}")
+                        return Response(
+                            response=json.dumps({"validationResponse": validation_code}),
+                            status=200,
+                            headers={"Content-Type": "application/json"},
+                        )
+
+                # Handle incoming call events asynchronously
+                elif event_type == "Microsoft.Communication.IncomingCall":
+                    self.logger.info("Processing incoming call event from EventGrid")
+                    # Process in background without blocking response
+                    asyncio.create_task(self._process_incoming_call_async(first_event))
+                    return Response(status=200)
+
+            # Default response for other events
+            return Response(status=200)
+
+        except Exception as e:
+            self.logger.error(f"Error in EventGrid handler: {str(e)}")
+            # Return success even on error to avoid EventGrid retries
+            return Response(status=200)
 
     async def handle_callback(self, context_id: str):
         """Handle callbacks from the call automation service"""
@@ -356,6 +407,8 @@ class CallAutomationApp:
             EventTypes.RECOGNIZE_FAILED: self.event_handlers.handle_recognize_failed,
             EventTypes.CALL_DISCONNECTED: self.event_handlers.handle_call_disconnected,
             EventTypes.PARTICIPANTS_UPDATED: self.event_handlers.handle_participants_updated,
+            EventTypes.MEDIA_STREAMING_STARTED: self.event_handlers.handle_media_streaming_started,
+            EventTypes.MEDIA_STREAMING_STOPPED: self.event_handlers.handle_media_streaming_stopped,
         }
 
         handler = event_handlers.get(event.type)
@@ -368,7 +421,12 @@ class CallAutomationApp:
                 )
                 raise
         else:
-            self.logger.warning(f"No handler found for event type: {event.type}")
+            # Handle MediaStreamingStopped event specifically
+            if event.type == "Microsoft.Communication.MediaStreamingStopped":
+                self.logger.info(f"Handling MediaStreamingStopped event for call {event.data.get('callConnectionId')}")
+                await self.event_handlers.handle_media_streaming_stopped(event, "")
+            else:
+                self.logger.warning(f"No handler found for event type: {event.type}")
 
     async def _answer_call_async(self, incoming_call_context, callback_url):
         self.logger.info("_answer_call_async event")
@@ -382,26 +440,66 @@ class CallAutomationApp:
             websocket_uri = f"wss://{callback_host}/ws"
         self.logger.info(f"Setting up media streaming with WebSocket URI: {websocket_uri}")
 
+        # TEMPORARILY DISABLE media streaming to test direct Voice Live integration
         # Configure media streaming options for Voice Live integration
-        media_streaming_options = MediaStreamingOptions(
-            transport_url=websocket_uri,
-            transport_type=MediaStreamingTransportType.WEBSOCKET,
-            content_type=MediaStreamingContentType.AUDIO,
-            audio_channel_type=MediaStreamingAudioChannelType.MIXED,
-            start_media_streaming=True
+        # media_streaming_options = MediaStreamingOptions(
+        #     transport_url=websocket_uri,
+        #     transport_type=MediaStreamingTransportType.WEBSOCKET,
+        #     content_type=MediaStreamingContentType.AUDIO,
+        #     audio_channel_type=MediaStreamingAudioChannelType.MIXED,
+        #     start_media_streaming=True
+        # )
+        media_streaming_options = None
+
+        # Answer call - run in thread pool to avoid blocking
+        if media_streaming_options:
+            self.logger.info("Answering call with Voice Live media streaming enabled")
+        else:
+            self.logger.info("Answering call WITHOUT media streaming - using direct Voice Live integration")
+
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            None,
+            lambda: self.call_automation_client.answer_call(
+                incoming_call_context=incoming_call_context,
+                cognitive_services_endpoint=self.config.COGNITIVE_SERVICE_ENDPOINT,
+                callback_url=callback_url,
+                media_streaming=media_streaming_options
+            )
         )
 
-        # Answer call with media streaming enabled
-        self.logger.info("Answering call with Voice Live media streaming enabled")
-        return self.call_automation_client.answer_call(
-            incoming_call_context=incoming_call_context,
-            cognitive_services_endpoint=self.config.COGNITIVE_SERVICE_ENDPOINT,
-            callback_url=callback_url,
-            media_streaming=media_streaming_options
-        )
+    async def _process_incoming_call_async(self, event_dict: dict):
+        """Process incoming call event asynchronously without blocking webhook response"""
+        self.logger.info("_process_incoming_call_async event")
+
+        try:
+            caller_id = self._extract_caller_id(event_dict.get("data", {}))
+            event_data = event_dict.get("data", {})
+
+            incoming_call_context = event_data.get("incomingCallContext")
+            if not incoming_call_context:
+                self.logger.error("Missing incomingCallContext in event data")
+                return
+
+            callback_uri = self._generate_callback_uri(caller_id)
+
+            # Call _answer_call_async
+            answer_call_result = await self._answer_call_async(
+                incoming_call_context, callback_uri
+            )
+
+            # Log the successful call connection
+            self.logger.info(
+                f"Answered call for connection id: {answer_call_result.call_connection_id}"
+            )
+
+        except Exception as e:
+            self.logger.error(
+                f"Error in _process_incoming_call_async: {str(e)}", exc_info=True
+            )
 
     async def _process_incoming_call(self, event: EventGridEvent):
-        """Process incoming call event"""
+        """Process incoming call event (legacy method)"""
         self.logger.info("_process_incoming_call event")
 
         try:
@@ -421,11 +519,62 @@ class CallAutomationApp:
                 f"Answered call for connection id: {answer_call_result.call_connection_id}"
             )
 
+            # If not using media streaming, start direct Voice Live integration
+            if not media_streaming_options:
+                await self._start_direct_voice_live_integration(answer_call_result.call_connection_id)
+
         except Exception as e:
             self.logger.error(
                 f"Error in _process_incoming_call: {str(e)}", exc_info=True
             )
             raise
+
+    async def _start_direct_voice_live_integration(self, call_connection_id: str):
+        """Start direct Voice Live integration without WebSocket media streaming"""
+        try:
+            self.logger.info(f"🎯 Starting direct Voice Live integration for call {call_connection_id}")
+
+            # Create a Voice Live session
+            voice_live_session = await self.voice_live_service.create_voice_live_session(call_connection_id)
+
+            if voice_live_session:
+                self.logger.info(f"✅ Voice Live session created for call {call_connection_id}")
+
+                # Send initial greeting using ACS text-to-speech
+                await self._send_voice_live_greeting(call_connection_id)
+
+            else:
+                self.logger.error(f"❌ Failed to create Voice Live session for call {call_connection_id}")
+
+        except Exception as e:
+            self.logger.error(f"Error starting direct Voice Live integration: {str(e)}", exc_info=True)
+
+    async def _send_voice_live_greeting(self, call_connection_id: str):
+        """Send initial greeting using ACS text-to-speech"""
+        try:
+            self.logger.info(f"🎯 Sending Voice Live greeting for call {call_connection_id}")
+
+            # Get the call connection
+            call_connection = self.call_automation_client.get_call_connection(call_connection_id)
+
+            # Create greeting message
+            greeting_text = """Hello! I'm Emma, your health advisor specializing in lab and imaging services.
+            I'm here to help you understand your test results, schedule appointments, and answer any health-related questions you may have.
+            How can I help you today?"""
+
+            # Use ACS text-to-speech to play the greeting
+            play_source = TextSource(
+                text=greeting_text,
+                voice_name="en-US-Emma2:DragonHDLatestNeural"
+            )
+
+            # Play the greeting
+            await call_connection.play_media_to_all(play_source)
+
+            self.logger.info(f"✅ Voice Live greeting sent for call {call_connection_id}")
+
+        except Exception as e:
+            self.logger.error(f"Error sending Voice Live greeting: {str(e)}", exc_info=True)
 
     def _extract_caller_id(self, event_data: dict) -> str:
         """Extract caller ID from event data"""
@@ -669,7 +818,8 @@ class CallAutomationApp:
 
     async def handle_websocket_media_streaming(self, websocket):
         """Handle WebSocket media streaming from Azure Communication Services"""
-        self.logger.info("ACS WebSocket connection established for media streaming")
+        self.logger.info("🎯 ACS WebSocket connection established for media streaming!")
+        self.logger.info(f"🎯 WebSocket connection from: {websocket.remote_address if hasattr(websocket, 'remote_address') else 'Unknown'}")
 
         # Extract call connection ID from headers
         call_connection_id = None

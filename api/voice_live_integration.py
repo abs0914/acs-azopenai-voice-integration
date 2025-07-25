@@ -49,9 +49,9 @@ class VoiceLiveCallHandler:
 
             self.call_connection_id = call_connection_id
 
-            # Create WebSocket connection to Voice Live - use base model instead of agent ID
-            # Use gpt-4o-realtime-preview instead of specific agent ID
-            url = f"{self.endpoint.rstrip('/')}/voice-agent/realtime?api-version=2025-05-01-preview&model={self.deployment}"
+            # Create WebSocket connection to Voice Live with official Microsoft endpoint format
+            # Use the vida-voice-bot agent for proactive engagement
+            url = f"{self.endpoint.rstrip('/')}/voice-live/realtime?api-version=2025-05-01-preview&model=gpt-4o-realtime-preview&agent={self.agent_id}"
             url = url.replace("https://", "wss://")
 
             log_message(f"🌐 WebSocket URL: {url}")

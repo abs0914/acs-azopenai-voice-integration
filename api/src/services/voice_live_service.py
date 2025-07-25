@@ -133,6 +133,7 @@ class AsyncAzureVoiceLive:
         api_version: str | None = "2025-05-01-preview",
         api_key: str | None = None,
         azure_ad_token_credential: AsyncTokenCredential | None = None,
+        agent_id: str | None = None,
     ) -> None:
         if azure_endpoint is None:
             azure_endpoint = os.environ.get("AZURE_VOICE_LIVE_ENDPOINT")
@@ -159,6 +160,7 @@ class AsyncAzureVoiceLive:
         self._azure_endpoint = azure_endpoint
         self._api_version = api_version
         self._azure_ad_token_credential = azure_ad_token_credential
+        self._agent_id = agent_id
         self._connection = None
         self._token = self.get_token() if azure_ad_token_credential else None
 
@@ -181,7 +183,12 @@ class AsyncAzureVoiceLive:
         if not isinstance(model, str):
             raise TypeError(f"The 'model' parameter must be of type 'str', but got {type(model).__name__}.")
 
-        url = f"{self._azure_endpoint.rstrip('/')}/voice-agent/realtime?api-version={self._api_version}&model={model}"
+        # Use official Microsoft Voice Live API endpoint format
+        url = f"{self._azure_endpoint.rstrip('/')}/voice-live/realtime?api-version={self._api_version}&model={model}"
+        if self._agent_id:
+            # For Azure AI Foundry agents, we may need to pass the agent differently
+            # Let's try both approaches - first with agent parameter, then with model if that fails
+            url += f"&agent={self._agent_id}"
         url = url.replace("https://", "wss://")
 
         auth_header = {"Authorization": f"Bearer {self._token}"} if self._token else {"api-key": self._api_key}
@@ -213,29 +220,98 @@ class VoiceLiveService:
             
             connection = await client.connect(model=self.config.AZURE_VOICE_LIVE_DEPLOYMENT).__aenter__()
             
-            # Configure the session with vida-voice-bot agent
+            # Configure the session with vida-voice-bot agent (matching working sample)
             await connection.session.update(
                 session={
                     "modalities": ["audio", "text"],
                     "input_audio_format": "pcm16",
                     "output_audio_format": "pcm16",
+                    "input_audio_sampling_rate": 24000,
                     "turn_detection": {
                         "type": "azure_semantic_vad",
                         "threshold": 0.3,
                         "prefix_padding_ms": 200,
                         "silence_duration_ms": 200,
-                        "remove_filler_words": False
+                        "remove_filler_words": False,
                     },
                     "input_audio_noise_reduction": {"type": "azure_deep_noise_suppression"},
                     "input_audio_echo_cancellation": {"type": "server_echo_cancellation"},
                     "voice": {
-                        "name": "en-US-Aria:DragonHDLatestNeural",
+                        "name": "en-US-Emma2:DragonHDLatestNeural",
                         "type": "azure-standard",
                         "temperature": 0.8,
                     },
+                    "instructions": """## Objective
+You are a voice agent named "Emma," who acts as a friendly and knowledgeable health advisor specializing in laboratory and medical imaging services. Speak naturally and conversationally, keeping answers clear and concise—no more than five spoken sentences.
+
+## Personality and Tone
+- Warm, empathetic, and professional.
+- Knowledgeable about laboratory tests and imaging procedures.
+
+## Purpose
+Guide users through scheduling lab or imaging appointments, explain available tests and scans, provide clinic locations and driving or transit directions, and send polite reminders before their scheduled services.
+
+## Language
+- No emojis, annotations, or parentheses—only plain spoken‐style text.
+- Spell out numbers and measurements in full (e.g., "one hundred twenty milliliters," "two days before").
+- Respond to the language detected
+
+## Capabilities
+- Describe common lab tests (e.g., blood work, cholesterol panels) and imaging services (e.g., X-rays, MRIs, ultrasounds).
+- Check real-time availability and book appointments at nearby clinics or hospitals.
+- Provide step-by-step directions or transit options to the facility.
+- Explain preparation instructions (e.g., fasting requirements) in simple terms.
+- Send timely reminders (e.g., "This is a reminder that your MRI is tomorrow at two p.m.").
+- Maintain context to personalize follow-up advice based on past interactions.
+- If you are interrupted keep the initial question in memory and respond later in case they still need their information.
+
+## Fallback Mechanism
+- If you lack specific information, say "I'm not certain about that, but you may contact [clinic hotline] or visit [relevant website]."
+- Invite the user to ask for more details or clarify their needs.
+
+## User Personalization
+At the start, Emma may prompt for basic details such as:
+> "How can I help you?"
+
+Use their answers to tailor appointment options, directions, and prep instructions.
+
+Always respond with audio. When a caller speaks to you, respond with spoken audio. Keep your responses conversational and natural. Start with a friendly greeting when the call begins."""
                 }
             )
             
+            # Send initial greeting message
+            import json
+            import uuid
+
+            # Send a greeting trigger that explicitly requests audio response
+            greeting_event = {
+                "type": "conversation.item.create",
+                "event_id": str(uuid.uuid4()),
+                "item": {
+                    "id": str(uuid.uuid4()),
+                    "type": "message",
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "input_text",
+                            "text": "Hello! Please introduce yourself and ask how you can help me today. Respond with audio."
+                        }
+                    ]
+                }
+            }
+            await connection.send(json.dumps(greeting_event))
+
+            # Create response with explicit audio output request
+            response_event = {
+                "type": "response.create",
+                "event_id": str(uuid.uuid4()),
+                "response": {
+                    "modalities": ["audio", "text"],
+                    "instructions": "You must respond with spoken audio. Introduce yourself as Emma, a health advisor, and ask how you can help today. Always generate audio output for your responses."
+                }
+            }
+            await connection.send(json.dumps(response_event))
+
             self.active_connections[call_connection_id] = connection
             self.logger.info(f"Created Voice Live session for call {call_connection_id}")
             return connection

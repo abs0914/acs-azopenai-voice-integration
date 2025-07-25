@@ -231,6 +231,44 @@ class EventHandlers:
         except Exception as e:
             self.logger.error(f"Error in handle_participants_updated: {str(e)}", exc_info=True)
 
+    async def handle_media_streaming_started(self, event: CloudEvent, caller_id: str) -> None:
+        """Handle media streaming started event"""
+        try:
+            call_connection_id = event.data.get("callConnectionId")
+            if not call_connection_id:
+                self.logger.error("Missing callConnectionId in media streaming started event")
+                return
+
+            self.logger.info(f"Media streaming started for call {call_connection_id}")
+
+            # Notify the audio streaming service that media streaming has started
+            await self.audio_streaming_service.handle_media_streaming_event(call_connection_id, {
+                "type": "streaming_started",
+                "callConnectionId": call_connection_id
+            })
+
+        except Exception as e:
+            self.logger.error(f"Error handling media streaming started event: {e}")
+
+    async def handle_media_streaming_stopped(self, event: CloudEvent, caller_id: str) -> None:
+        """Handle media streaming stopped event"""
+        try:
+            call_connection_id = event.data.get("callConnectionId")
+            if not call_connection_id:
+                self.logger.error("Missing callConnectionId in media streaming stopped event")
+                return
+
+            self.logger.info(f"Media streaming stopped for call {call_connection_id}")
+
+            # Notify the audio streaming service that media streaming has stopped
+            await self.audio_streaming_service.handle_media_streaming_event(call_connection_id, {
+                "type": "streaming_stopped",
+                "callConnectionId": call_connection_id
+            })
+
+        except Exception as e:
+            self.logger.error(f"Error handling media streaming stopped event: {e}")
+
     async def handle_media_streaming_event(self, event: CloudEvent, caller_id: str) -> None:
         """Handle media streaming events for Voice Live integration"""
         try:
