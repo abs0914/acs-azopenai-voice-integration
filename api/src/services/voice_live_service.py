@@ -183,7 +183,7 @@ class AsyncAzureVoiceLive:
         if not isinstance(model, str):
             raise TypeError(f"The 'model' parameter must be of type 'str', but got {type(model).__name__}.")
 
-        # Use official Microsoft Voice Live API endpoint format
+        # Use official Microsoft Voice Live API endpoint format with model parameter
         url = f"{self._azure_endpoint.rstrip('/')}/voice-live/realtime?api-version={self._api_version}&model={model}"
         if self._agent_id:
             # For Azure AI Foundry agents, we may need to pass the agent differently
@@ -218,99 +218,16 @@ class VoiceLiveService:
                 api_key=self.config.AZURE_VOICE_LIVE_API_KEY,
             )
             
-            connection = await client.connect(model=self.config.AZURE_VOICE_LIVE_DEPLOYMENT).__aenter__()
-            
-            # Configure the session with vida-voice-bot agent (matching working sample)
-            await connection.session.update(
-                session={
-                    "modalities": ["audio", "text"],
-                    "input_audio_format": "pcm16",
-                    "output_audio_format": "pcm16",
-                    "input_audio_sampling_rate": 24000,
-                    "turn_detection": {
-                        "type": "azure_semantic_vad",
-                        "threshold": 0.3,
-                        "prefix_padding_ms": 200,
-                        "silence_duration_ms": 200,
-                        "remove_filler_words": False,
-                    },
-                    "input_audio_noise_reduction": {"type": "azure_deep_noise_suppression"},
-                    "input_audio_echo_cancellation": {"type": "server_echo_cancellation"},
-                    "voice": {
-                        "name": "en-US-Emma2:DragonHDLatestNeural",
-                        "type": "azure-standard",
-                        "temperature": 0.8,
-                    },
-                    "instructions": """## Objective
-You are a voice agent named "Emma," who acts as a friendly and knowledgeable health advisor specializing in laboratory and medical imaging services. Speak naturally and conversationally, keeping answers clear and concise—no more than five spoken sentences.
+            connection = await client.connect(model=self.config.AZURE_VOICE_LIVE_MODEL).__aenter__()
 
-## Personality and Tone
-- Warm, empathetic, and professional.
-- Knowledgeable about laboratory tests and imaging procedures.
-
-## Purpose
-Guide users through scheduling lab or imaging appointments, explain available tests and scans, provide clinic locations and driving or transit directions, and send polite reminders before their scheduled services.
-
-## Language
-- No emojis, annotations, or parentheses—only plain spoken‐style text.
-- Spell out numbers and measurements in full (e.g., "one hundred twenty milliliters," "two days before").
-- Respond to the language detected
-
-## Capabilities
-- Describe common lab tests (e.g., blood work, cholesterol panels) and imaging services (e.g., X-rays, MRIs, ultrasounds).
-- Check real-time availability and book appointments at nearby clinics or hospitals.
-- Provide step-by-step directions or transit options to the facility.
-- Explain preparation instructions (e.g., fasting requirements) in simple terms.
-- Send timely reminders (e.g., "This is a reminder that your MRI is tomorrow at two p.m.").
-- Maintain context to personalize follow-up advice based on past interactions.
-- If you are interrupted keep the initial question in memory and respond later in case they still need their information.
-
-## Fallback Mechanism
-- If you lack specific information, say "I'm not certain about that, but you may contact [clinic hotline] or visit [relevant website]."
-- Invite the user to ask for more details or clarify their needs.
-
-## User Personalization
-At the start, Emma may prompt for basic details such as:
-> "How can I help you?"
-
-Use their answers to tailor appointment options, directions, and prep instructions.
-
-Always respond with audio. When a caller speaks to you, respond with spoken audio. Keep your responses conversational and natural. Start with a friendly greeting when the call begins."""
-                }
-            )
-            
-            # Send initial greeting message
+            # Don't send any messages immediately - wait for session.created event
+            # The session will be configured in the event handler
             import json
-            import uuid
+            self.logger.info(f"Voice Live connection established, waiting for session.created event for call {call_connection_id}")
+            self.logger.info(f"Using Voice Live model: {self.config.AZURE_VOICE_LIVE_MODEL}")
 
-            # Send a greeting trigger that explicitly requests audio response
-            greeting_event = {
-                "type": "conversation.item.create",
-                "event_id": str(uuid.uuid4()),
-                "item": {
-                    "id": str(uuid.uuid4()),
-                    "type": "message",
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "input_text",
-                            "text": "Hello! Please introduce yourself and ask how you can help me today. Respond with audio."
-                        }
-                    ]
-                }
-            }
-            await connection.send(json.dumps(greeting_event))
-
-            # Create response with explicit audio output request
-            response_event = {
-                "type": "response.create",
-                "event_id": str(uuid.uuid4()),
-                "response": {
-                    "modalities": ["audio", "text"],
-                    "instructions": "You must respond with spoken audio. Introduce yourself as Emma, a health advisor, and ask how you can help today. Always generate audio output for your responses."
-                }
-            }
-            await connection.send(json.dumps(response_event))
+            # Store connection but don't send any messages yet
+            # Messages will be sent after receiving session.created event
 
             self.active_connections[call_connection_id] = connection
             self.logger.info(f"Created Voice Live session for call {call_connection_id}")

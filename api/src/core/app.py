@@ -157,17 +157,13 @@ class CallAutomationApp:
             for event_dict in request_data:
                 self.logger.info(f"Processing event: {json.dumps(event_dict)}")
 
-                # Create EventGridEvent directly from the dictionary
-                try:
-                    event = EventGridEvent.from_dict(event_dict)
-                    self.logger.info(f"Parsed event: {event}")
+                # Handle EventGrid subscription validation directly
+                event_type = event_dict.get("eventType", "")
 
-                    if (
-                        event.event_type
-                        == SystemEventNames.EventGridSubscriptionValidationEventName
-                    ):
-                        self.logger.info("Handling validation event")
-                        validation_code = event.data["validationCode"]
+                if event_type == "Microsoft.EventGrid.SubscriptionValidationEvent":
+                    self.logger.info("Handling EventGrid validation event")
+                    validation_code = event_dict.get("data", {}).get("validationCode")
+                    if validation_code:
                         self.logger.info(f"Validation code: {validation_code}")
                         return Response(
                             response=json.dumps(
@@ -177,29 +173,23 @@ class CallAutomationApp:
                             headers={"Content-Type": "application/json"},
                         )
 
-                    elif event.event_type == EventTypes.INCOMING_CALL:
-                        self.logger.info("Handling incoming call event")
+                # Handle incoming call events
+                elif event_type == "Microsoft.Communication.IncomingCall":
+                    self.logger.info("Handling incoming call event")
+                    try:
+                        # Create EventGridEvent for incoming call processing
+                        event = EventGridEvent.from_dict(event_dict)
                         await self._process_incoming_call(event)
                         return Response(status=StatusCodes.OK)
+                    except Exception as e:
+                        self.logger.error(f"Error processing incoming call: {str(e)}", exc_info=True)
+                        return Response(status=StatusCodes.OK)  # Return OK to avoid EventGrid retries
 
-                except Exception as e:
-                    self.logger.error(
-                        f"Error processing event dict: {str(e)}", exc_info=True
-                    )
-                    return Response(
-                        response=json.dumps(
-                            {"error": "Error processing event", "details": str(e)}
-                        ),
-                        status=StatusCodes.SERVER_ERROR,
-                        headers={"Content-Type": "application/json"},
-                    )
+                else:
+                    self.logger.info(f"Unhandled event type: {event_type}")
+                    return Response(status=StatusCodes.OK)
 
-            # If we get here, no events were processed
-            return Response(
-                response=json.dumps({"error": "No valid events found in request"}),
-                status=StatusCodes.BAD_REQUEST,
-                headers={"Content-Type": "application/json"},
-            )
+            return Response(status=StatusCodes.OK)
 
         except Exception as e:
             self.logger.error(
@@ -440,16 +430,14 @@ class CallAutomationApp:
             websocket_uri = f"wss://{callback_host}/ws"
         self.logger.info(f"Setting up media streaming with WebSocket URI: {websocket_uri}")
 
-        # TEMPORARILY DISABLE media streaming to test direct Voice Live integration
         # Configure media streaming options for Voice Live integration
-        # media_streaming_options = MediaStreamingOptions(
-        #     transport_url=websocket_uri,
-        #     transport_type=MediaStreamingTransportType.WEBSOCKET,
-        #     content_type=MediaStreamingContentType.AUDIO,
-        #     audio_channel_type=MediaStreamingAudioChannelType.MIXED,
-        #     start_media_streaming=True
-        # )
-        media_streaming_options = None
+        media_streaming_options = MediaStreamingOptions(
+            transport_url=websocket_uri,
+            transport_type=MediaStreamingTransportType.WEBSOCKET,
+            content_type=MediaStreamingContentType.AUDIO,
+            audio_channel_type=MediaStreamingAudioChannelType.MIXED,
+            start_media_streaming=True
+        )
 
         # Answer call - run in thread pool to avoid blocking
         if media_streaming_options:
@@ -475,6 +463,20 @@ class CallAutomationApp:
         try:
             caller_id = self._extract_caller_id(event_dict.get("data", {}))
             event_data = event_dict.get("data", {})
+            server_call_id = event_data.get("serverCallId")
+
+            self.logger.info(f"Processing call from: {caller_id}, Server Call ID: {server_call_id}")
+
+            # Check if we've already processed this call
+            if hasattr(self, '_processed_calls'):
+                if server_call_id in self._processed_calls:
+                    self.logger.info(f"Call {server_call_id} already processed, skipping")
+                    return
+            else:
+                self._processed_calls = set()
+
+            # Mark this call as being processed
+            self._processed_calls.add(server_call_id)
 
             incoming_call_context = event_data.get("incomingCallContext")
             if not incoming_call_context:
@@ -518,10 +520,6 @@ class CallAutomationApp:
             self.logger.info(
                 f"Answered call for connection id: {answer_call_result.call_connection_id}"
             )
-
-            # If not using media streaming, start direct Voice Live integration
-            if not media_streaming_options:
-                await self._start_direct_voice_live_integration(answer_call_result.call_connection_id)
 
         except Exception as e:
             self.logger.error(

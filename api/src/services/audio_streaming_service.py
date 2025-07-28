@@ -176,12 +176,9 @@ class AudioStreamingService:
                     audio_data = base64.b64decode(audio_delta)
                     self.logger.info(f"🎯 Decoded audio data, length: {len(audio_data)} bytes for call {call_connection_id}")
 
-                    # Resample audio from 24kHz (Voice Live) to 16kHz (ACS)
-                    resampled_audio = resample_audio(audio_data, source_rate=24000, target_rate=16000)
-                    self.logger.info(f"🎯 Resampled audio from {len(audio_data)} to {len(resampled_audio)} bytes for call {call_connection_id}")
-
-                    # Send resampled audio back to ACS call
-                    await self._send_audio_to_call(call_connection_id, resampled_audio)
+                    # Voice Live is configured to output at 24kHz PCM24 to match ACS format
+                    # Send audio directly to ACS call
+                    await self._send_audio_to_call(call_connection_id, audio_data)
                     self.logger.info(f"🎯 Sent {len(audio_data)} bytes of audio to call {call_connection_id}")
                 else:
                     self.logger.warning(f"🎯 Empty audio delta received for call {call_connection_id}")
@@ -206,11 +203,91 @@ class AudioStreamingService:
             elif event_type == "session.updated":
                 self.logger.info(f"Voice Live session updated for call {call_connection_id}")
 
+            elif event_type == "session.created":
+                self.logger.info(f"Voice Live session created for call {call_connection_id}")
+                # Configure the session and send initial greeting
+                await self._configure_voice_live_session(call_connection_id)
+
             else:
                 self.logger.info(f"Unhandled Voice Live event type: {event_type} for call {call_connection_id}")
 
         except Exception as e:
             self.logger.error(f"Error handling Voice Live event: {e}")
+
+    async def _configure_voice_live_session(self, call_connection_id: str):
+        """Configure Voice Live session after session.created event"""
+        try:
+            self.logger.info(f"Configuring Voice Live session for call {call_connection_id}")
+
+            # Get the Voice Live connection
+            if call_connection_id not in self.active_streams:
+                self.logger.error(f"No active stream for call {call_connection_id}")
+                return
+
+            voice_live_connection = self.active_streams[call_connection_id].get("voice_live_connection")
+            if not voice_live_connection:
+                self.logger.error(f"No Voice Live connection for call {call_connection_id}")
+                return
+
+            # Send session configuration matching Microsoft documentation
+            session_config = {
+                "type": "session.update",
+                "session": {
+                    "instructions": "You are a helpful AI assistant responding in natural, engaging language.",
+                    "turn_detection": {
+                        "type": "azure_semantic_vad",
+                        "threshold": 0.3,
+                        "prefix_padding_ms": 200,
+                        "silence_duration_ms": 200,
+                        "remove_filler_words": False,
+                        "end_of_utterance_detection": {
+                            "model": "semantic_detection_v1",
+                            "threshold": 0.1,
+                            "timeout": 4
+                        }
+                    },
+                    "input_audio_noise_reduction": {
+                        "type": "azure_deep_noise_suppression"
+                    },
+                    "input_audio_echo_cancellation": {
+                        "type": "server_echo_cancellation"
+                    },
+                    "voice": {
+                        "name": "en-US-Ava:DragonHDLatestNeural",
+                        "type": "azure-standard",
+                        "temperature": 0.8
+                    }
+                },
+                "event_id": ""
+            }
+
+            await voice_live_connection.send(json.dumps(session_config))
+            self.logger.info(f"Sent session configuration for call {call_connection_id}")
+
+            # Send initial greeting message
+            greeting_message = {
+                "type": "conversation.item.create",
+                "item": {
+                    "type": "message",
+                    "role": "user",
+                    "content": [{"type": "input_text", "text": "Hello"}]
+                }
+            }
+            await voice_live_connection.send(json.dumps(greeting_message))
+
+            # Trigger response with audio-only focus
+            response_create = {
+                "type": "response.create",
+                "response": {
+                    "modalities": ["audio"]
+                }
+            }
+            await voice_live_connection.send(json.dumps(response_create))
+
+            self.logger.info(f"Sent initial greeting and triggered response for call {call_connection_id}")
+
+        except Exception as e:
+            self.logger.error(f"Error configuring Voice Live session: {e}")
 
     async def _trigger_initial_response(self, call_connection_id: str):
         """Trigger initial response from Voice Live to start conversation"""
@@ -263,11 +340,14 @@ class AudioStreamingService:
                 audio_base64 = base64.b64encode(audio_data).decode("utf-8")
                 self.logger.info(f"🎯 Encoded audio to base64, length: {len(audio_base64)} for call {call_connection_id}")
 
-                # Create the JSON message format for ACS bidirectional streaming
+                # Create the JSON message format for ACS bidirectional streaming with explicit format
                 outbound_message = {
                     "Kind": "AudioData",
                     "AudioData": {
-                        "Data": audio_base64
+                        "Data": audio_base64,
+                        "Timestamp": None,
+                        "ParticipantRawID": None,
+                        "Silent": False
                     },
                     "StopAudio": None
                 }
