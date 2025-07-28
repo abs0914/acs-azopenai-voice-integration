@@ -1,311 +1,447 @@
-# Call Automation with Gen AI and Azure Communication Service (ACS)
+# Azure AI Voice Live Integration with Azure Communication Services
 
-> [!WARNING]
-> This Solutions Accelerator is in early stages and is subjected to changes.
+A production-ready voice assistant solution using Azure AI Voice Live API for real-time, low-latency voice interactions through Azure Communication Services.
 
-## Table of Contents
-- [Features](#features)
-- [Solution Approaches](#solution-approaches)
-  - [Approach 1: GPT-4o Realtime](#approach-1-gpt-4o-realtime)
-  - [Approach 2: Azure AI Speech Services + GPT-4o](#approach-2-azure-ai-speech-services--gpt-4o)
+## 🎯 **What This Solution Provides**
+
+- **Real-time Voice Agent**: Direct audio-to-audio processing with Azure AI Voice Live API
+- **Low Latency**: < 500ms response times with advanced audio processing
+- **Production Ready**: Complete infrastructure deployment with Terraform
+- **Advanced Audio Features**: Noise suppression, echo cancellation, interruption handling
+- **Scalable Architecture**: Event-driven design with Azure services integration
+
+## 📋 **Table of Contents**
+- [Quick Start](#quick-start)
 - [Prerequisites](#prerequisites)
-- [Setup and Installation](#setup-and-installation)
-- [Running it locally](#running-it-locally)
-- [Running it on Azure](#running-it-on-azure)
-- [Test the app with an outbound phone call](#test-the-app-with-an-outbound-phone-call)
----
-## Features
-- **PSTN Calling**: Users can call a phone number provisioned by **Azure Communication Services (ACS)**, and the voice assistant provides real-time interactions using either **GPT-4o Realtime** or **Azure AI Speech Services** + GPT-4o (STT/TTS approach).
-- **GPT-4o**: Enables dynamic, context-aware conversations for potential candidates based on job descriptions. Supports multimodal data (text/audio), with minimal latency if using GPT-4o Realtime.
-- **Event-Driven Architecture**: **Azure EventGrid** routes call-related events (e.g., `IncomingCall`, `CallConnected`) from ACS to a **Quart** application, ensuring a reactive, decoupled design.
-- **Redis Caching**: Speeds up lookups by storing job details, competency questions, and candidate data, reducing repeated API calls.
-- **Azure Services**:
-  - **Azure Maps** (WIP): Provides geographic location data for proximity checks.  
-  - **Azure Search** (WIP): Queries job details and relevant data.  
-  - **Azure Cognitive Services**: Optionally provides **Speech-to-Text** (STT) and **Text-to-Speech** (TTS) if you do not use GPT-4o Realtime for audio. 
-- **Session History**: Stores conversation logs, transcripts (if generated), and call recordings in **Azure Cosmos DB** for long-term analytics or auditing.
----
+- [Architecture Overview](#architecture-overview)
+- [Step-by-Step Setup](#step-by-step-setup)
+- [Configuration](#configuration)
+- [Deployment](#deployment)
+- [Testing](#testing)
+- [Troubleshooting](#troubleshooting)
+- [Production Considerations](#production-considerations)
 
-## Architecture Overview
+## 🚀 **Quick Start**
 
-Regardless of which approach you use, the following Azure services are key:
-
-1. **Azure Communication Services (ACS)**: Manages **inbound** and **outbound** PSTN calls.  
-2. **Azure EventGrid**: For **event-driven** call management (routes `IncomingCall`, `CallConnected`, etc. to the Quart API).  
-3. **Redis Cache**: Stores hot data (job details, candidate context).  
-4. **Azure Cosmos DB**: Persists session data (call recordings, transcripts, conversation logs).  
-5. **Azure Maps** (WIP) and **Azure Search** (WIP): Optional for location-based queries and advanced job searches.
-
-**However**, for the **audio** and **conversation** pipeline, you have **two approaches**:
-
----
-
-## Prerequisites
-
-- **Azure Subscription** with access to Azure OpenAI models.  
-- **Python 3.10+** installed on your local environment.  
-- **Azure Dev Tunnel** (or alternative) for handling ACS callback URLs if testing locally.  
-- **Terraform** to deploy the IaC in the `automation` folder.
----
-
-## Solution Approaches
-
-### Approach 1: GPT-4o Realtime
-
-In this scenario, **GPT-4o Realtime** handles **both** the **audio input** (received from the user via ACS) and the **audio output** (sent back to ACS). No separate STT or TTS services are required.
-
-#### Sequence Diagram (GPT-4o Realtime)
-
-```mermaid
-sequenceDiagram
-    autonumber
-
-    participant U as PSTN User
-    participant A as Azure Communication Services (ACS)
-    participant E as Azure EventGrid
-    participant Q as Quart API
-    participant G as GPT-4o Realtime (Audio + Logic)
-    participant R as Redis Cache
-    participant S as Azure Search
-    participant M as Azure Maps
-    participant DB as Azure Cosmos DB
-
-    U->>A: Dial PSTN Number (Inbound or Outbound)
-    A->>E: Publish call events (IncomingCall, etc.)
-    E->>Q: POST /api/callbacks/<context_id> (JSON)
-    alt Handle Call
-        note over Q: Validate event,<br/>connect call,<br/>initiate session
-    end
-
-    Q->>G: Stream user audio (WebSocket)
-    G-->>Q: Real-time response (audio/text)
-
-    Q->>A: Send GPT-4o audio for playback
-    A-->>U: Caller hears low-latency response
-
-    U->>A: (User continues speaking)
-    A->>E: Publish more call events
-    E->>Q: /api/callbacks/<context_id>
-
-    Q->>R: Cache data
-    Q->>S: (WIP) Azure Search
-    S-->>Q: Search results
-    Q->>M: (WIP) Azure Maps
-    M-->>Q: Location data
-
-    Q->>DB: Store conversation logs, etc.
-    Q->>A: Hang up call
-    A-->>U: Call ended
-```
-
-**Key Points**:  
-1. **No STT/TTS** from Azure AI Speech Services — GPT-4o Realtime directly processes audio streams, returning audio responses.  
-2. **Low-latency** conversation, typically hundreds of milliseconds.  
-3. All other aspects (EventGrid, Redis, Cosmos DB, etc.) remain the same.
-
-#### Flowchart (Inbound & Outbound with GPT-4o Realtime)
-
-```mermaid
-flowchart LR
-    U["User PSTN"]
-    ACS["ACS Inbound/Outbound PSTN"]
-    EG["Azure EventGrid"]
-    Q["Quart API"]
-    G["GPT-4o Realtime"]
-    R["Redis Cache"]
-    DB["Azure Cosmos DB"]
-    S["Azure Search (WIP)"]
-    M["Azure Maps (WIP)"]
-    
-    U -->|Dial ACS Number| ACS
-    Q -->|Initiate Outbound Call| ACS
-    ACS -->|Call Events| EG
-    EG -->|POST callbacks| Q
-    Q --> G
-    G --> Q
-    Q --> R
-    Q --> DB
-    Q --> S
-    Q --> M
-    ACS -->|Play Audio| U
-```
-
-1. **Quart** can receive inbound calls via ACS or **initiate outbound calls**.  
-2. **GPT-4o Realtime** handles audio input and output.  
-3. **Redis**, **Cosmos DB**, **Azure Search**, and **Azure Maps** remain optional expansions of the overall architecture.
-
----
-
-### Approach 2: Azure AI Speech Services + GPT-4o
-
-In this scenario, you **do** use **Azure AI Speech Services** for **Speech-to-Text (STT)** and **Text-to-Speech (TTS)**. **GPT-4o** is used for **text-based** conversation logic only. The **audio** pipeline flows through **Azure Speech** for **recognition** and **synthesis**:
-
-1. **User** speaks to the PSTN phone.  
-2. **ACS** captures audio and triggers events via EventGrid to **Quart**.  
-3. **Quart** sends the captured audio to **Azure Speech** for **STT**.  
-4. **Quart** then calls **GPT-4o** with the **transcribed text**. GPT-4o returns a **text response**.  
-5. **Quart** uses **Azure Speech** to synthesize **TTS** from GPT-4o’s text.  
-6. **ACS** plays the TTS audio to the user.
-
-#### Sequence Diagram (Azure Speech Services + GPT-4o)
-
-```mermaid
-sequenceDiagram
-    autonumber
-
-    participant U as PSTN User
-    participant A as Azure Communication Services (ACS)
-    participant E as Azure EventGrid
-    participant Q as Quart API
-    participant AS as Azure Speech (STT/TTS)
-    participant GPT as GPT-4o (Text Conversation)
-    participant R as Redis Cache
-    participant DB as Azure Cosmos DB
-
-    U->>A: Dial PSTN Number
-    A->>E: Publish call events
-    E->>Q: POST /api/callbacks
-    alt Handle Call
-        note over Q: Connect call, etc.
-    end
-
-    %% STT flow
-    Q->>A: Retrieve user audio
-    Q->>AS: Send audio for Speech-to-Text
-    AS-->>Q: Transcribed text
-
-    %% GPT-4o text conversation
-    Q->>GPT: userPrompt = transcribed text
-    GPT-->>Q: text response
-
-    %% TTS flow
-    Q->>AS: Convert GPT text to TTS
-    AS-->>Q: Audio stream
-
-    %% Playback via ACS
-    Q->>A: Play TTS to user
-    A-->>U: Caller hears TTS
-
-    U->>A: Continues speaking
-    A->>E: Call events
-    E->>Q: More callbacks
-
-    Q->>R: Cache data
-    Q->>DB: Store logs and transcripts
-
-    Q->>A: Hang up
-    A-->>U: Call ended
-```
-
-**Key Differences**:  
-- The conversation logic is **still GPT-4o** (text-based).  
-- **Azure Speech** services handle **speech recognition (STT)** and **speech generation (TTS)**.  
-- Latency can be slightly higher than GPT-4o Realtime for audio, but you gain more explicit STT/TTS customization options (e.g., voice fonts, domain-specific speech models).
-
-#### Flowchart (Inbound & Outbound with Azure Speech + GPT-4o)
-
-```mermaid
-flowchart LR
-    U["User PSTN"]
-    ACS["ACS PSTN"]
-    EG["Azure EventGrid"]
-    Q["Quart API"]
-    AS["Azure Speech STT/TTS"]
-    GPT["GPT-4o (Text Only)"]
-    R["Redis Cache"]
-    DB["Azure Cosmos DB"]
-    
-    U -->|Dial ACS| ACS
-    Q -->|Outbound Call| ACS
-    ACS -->|Call Events| EG
-    EG -->|POST callbacks| Q
-    Q --> AS
-    Q --> GPT
-    Q --> R
-    Q --> DB
-    ACS -->|Play TTS| U
-```
-
-1. **Inbound/Outbound** calls managed by ACS.  
-2. **Quart** uses **Azure Speech** to handle the voice aspects (speech recognition and speech synthesis).  
-3. **GPT-4o** is only given **text** from STT and returns **text** for TTS.  
-4. **Redis** and **Cosmos DB** remain central for caching and logging.
-
----
-
-## Setup and Installation
-### 0. Fork the repository
-Fork the repo to your GitHub account.
-### 1. Clone the Repository
+**Already have Azure access?** Deploy in 15 minutes:
 
 ```bash
-git clone https://github.com/your-repository-name/voice-assistant
-cd voice-assistant
+# 1. Clone and setup
+git clone https://github.com/abs0914/acs-azopenai-voice-integration.git
+cd acs-azopenai-voice-integration
+
+# 2. Configure your API key
+cd automation
+# Edit terraform.tfvars with your Azure Voice Live API key
+
+# 3. Deploy everything
+./deploy_complete_solution.sh  # Linux/Mac
+# OR
+.\deploy_complete_solution.ps1  # Windows
+
+# 4. Test your phone number
+# Call the number provided in the deployment output
 ```
 
-### 2. Install Python Dependencies
-Create a virtual environment and install the required Python libraries listed in `./api/requirements.txt`.
+## 📋 **Prerequisites**
 
-#### Bash
+### Required Azure Services
+- **Azure Subscription** with contributor access
+- **Azure AI Voice Live API** access and API key
+- **Azure Communication Services** with phone number capability
+- **Azure OpenAI** (for fallback scenarios)
+
+### Development Tools
+- **Python 3.10+**
+- **Terraform** (latest version)
+- **Azure CLI** (logged in)
+- **Git**
+
+### Optional (for local development)
+- **Azure Dev Tunnels** or **ngrok** for webhook testing
+
+## 🏗️ **Architecture Overview**
+
+This solution uses **Azure AI Voice Live API** for direct audio-to-audio processing, eliminating the traditional STT/TTS pipeline for significantly reduced latency.
+
+### Core Components
+
+```mermaid
+flowchart TB
+    U[📞 Phone User] --> ACS[Azure Communication Services]
+    ACS --> EG[Azure EventGrid]
+    EG --> API[Quart API Application]
+    API --> VL[Azure AI Voice Live API]
+    API --> Cache[Redis Cache]
+    API --> DB[Cosmos DB]
+    
+    VL --> |Real-time Audio| API
+    API --> |Audio Response| ACS
+    ACS --> |Voice Output| U
+```
+
+### Key Services
+
+1. **Azure Communication Services (ACS)**: Manages PSTN phone calls and media streaming
+2. **Azure AI Voice Live API**: Provides real-time audio-to-audio AI processing
+3. **Azure EventGrid**: Routes call events to your application
+4. **Quart API**: Python web application handling call automation
+5. **Redis Cache**: Session management and performance optimization
+6. **Cosmos DB**: Conversation logging and analytics
+7. **Azure OpenAI**: Fallback for traditional STT/TTS approach
+
+### Voice Live Integration Benefits
+
+- **Ultra-low Latency**: < 500ms response times
+- **Advanced Audio Processing**: Built-in noise suppression and echo cancellation
+- **Natural Interruptions**: Semantic voice activity detection
+- **No STT/TTS Pipeline**: Direct audio-to-audio processing
+- **Production Scale**: Managed infrastructure with global availability
+
+## 📝 **Step-by-Step Setup**
+
+### Step 1: Clone and Prepare Repository
+
 ```bash
+# Clone the repository
+git clone https://github.com/abs0914/acs-azopenai-voice-integration.git
+cd acs-azopenai-voice-integration
+
+# Create Python virtual environment
 python3 -m venv .venv
-source .venv/bin/activate
+source .venv/bin/activate  # Linux/Mac
+# OR
+.venv\Scripts\Activate.ps1  # Windows
+
+# Install dependencies
 pip install -r api/requirements.txt
 ```
 
-#### PowerShell
+### Step 2: Configure Azure Voice Live API
+
+1. **Obtain Azure AI Voice Live API Access**
+   - Request access through Azure portal
+   - Create Azure AI Voice Live resource in `eastus2` region
+   - Note your API key and endpoint
+
+2. **Configure Terraform Variables**
+   ```bash
+   cd automation
+   cp terraform.tfvars.example terraform.tfvars
+   ```
+
+   Edit `terraform.tfvars`:
+   ```hcl
+   # Required: Your Azure Voice Live API key
+   azure_voice_live_api_key = "YOUR_ACTUAL_API_KEY_HERE"
+   
+   # Optional: Customize deployment
+   prefix = "tf-ai"
+   name = "aivoice"
+   environment = "dev"
+   location = "East US 2"
+   ```
+
+### Step 3: Deploy Azure Infrastructure
+
+```bash
+# Ensure you're logged into Azure CLI
+az login
+az account show
+
+# Deploy infrastructure
+cd automation
+terraform init
+terraform plan
+terraform apply
+```
+
+**What gets deployed:**
+- Azure Communication Services with phone number
+- Azure AI Voice Live integration
+- Azure App Service for hosting
+- Redis Cache for session management
+- Cosmos DB for conversation logging
+- EventGrid for call event routing
+- All necessary networking and security configurations
+
+### Step 4: Deploy Application Code
+
+The deployment script handles this automatically, but you can also do it manually:
+
+```bash
+# Commit and push changes to trigger GitHub Actions
+git add .
+git commit -m "Deploy Azure AI Voice Live integration"
+git push origin main
+
+# Monitor deployment
+# Go to: https://github.com/your-username/acs-azopenai-voice-integration/actions
+```
+
+## ⚙️ **Configuration**
+
+### Environment Variables (Automatically Set by Terraform)
+
+```bash
+# Azure Communication Services
+ACS_CONNECTION_STRING="endpoint=https://..."
+AGENT_PHONE_NUMBER="+1844..."
+
+# Azure AI Voice Live API
+AZURE_VOICE_LIVE_ENDPOINT="https://vida-voice-live.cognitiveservices.azure.com/"
+AZURE_VOICE_LIVE_API_KEY="your-api-key"
+AZURE_VOICE_LIVE_DEPLOYMENT="gpt-4o-realtime-preview"
+AZURE_VOICE_LIVE_REGION="eastus2"
+VIDA_VOICE_BOT_ASSISTANT_ID="asst_dEODj1Hu6Z68Ebggl13DAHPv"
+
+# Application Settings
+CALLBACK_URI_HOST="https://your-app.azurewebsites.net"
+REDIS_URL="your-redis.redis.cache.windows.net"
+COSMOS_DB_URL="https://your-cosmos.documents.azure.com:443/"
+
+# Fallback (Azure OpenAI)
+AZURE_OPENAI_SERVICE_ENDPOINT="https://your-openai.openai.azure.com/"
+AZURE_OPENAI_SERVICE_KEY="your-openai-key"
+```
+
+### Voice Live Session Configuration
+
+The application automatically configures optimal settings:
+
+```python
+session_config = {
+    "turn_detection": {
+        "type": "azure_semantic_vad",
+        "threshold": 0.3,
+        "prefix_padding_ms": 200,
+        "silence_duration_ms": 200
+    },
+    "input_audio_noise_reduction": {"type": "azure_deep_noise_suppression"},
+    "input_audio_echo_cancellation": {"type": "server_echo_cancellation"},
+    "voice": {
+        "name": "en-US-Aria:DragonHDLatestNeural",
+        "type": "azure-standard",
+        "temperature": 0.8
+    }
+}
+```
+
+## 🚀 **Deployment**
+
+### Automated Deployment (Recommended)
+
+Use the provided deployment scripts for a complete setup:
+
+**Windows (PowerShell):**
 ```powershell
-python3 -m venv .venv
-.venv/Scripts/Activate.ps1
-pip install -r api/requirements.txt
+.\deploy_complete_solution.ps1
 ```
-### 3. Deploy the Terraform IaC
-> [!Note]
-> You need to have activated the venv and installed the requirements as the IaC automation contains python scripts that require specific libraries.
-Navigate to for the details for the [Terraform automation deployment Doc](automation/README.md).
 
-Make sure to follow the manual step of navigating inside the ACS resource and connecting it to the Cognitive Service (aka AI multiservices account) via Managed Identity. This process happens in the background when you do it from ACS. If this step is not done, the phone call will happen but it will hang up instantly.
+**Linux/Mac (Bash):**
+```bash
+./deploy_complete_solution.sh
+```
 
+**What the script does:**
+1. ✅ Validates prerequisites (Terraform, Azure CLI, Git)
+2. ✅ Deploys Terraform infrastructure
+3. ✅ Commits and pushes code changes
+4. ✅ Triggers GitHub Actions deployment
+5. ✅ Validates the deployment
 
-## Running it locally
+### Manual Deployment
 
-### 1. Add the Environment Variable values to a .env file
-Based on `.env.sample`, create and construct your `.env` file to allow your local app to access your Azure resource.
-
-### 2. Enable and run a Microsoft DevTunnel
-> [!NOTE]
->- Azure Dev Tunnels CLI. For details, see  >[Enable dev tunnel](https://docs.tunnels.api.>visualstudio.com/cli)
->- Create an Azure Cognitive Services resource. >For details, see [Create an Azure Cognitive >Services Resource](https://learn.microsoft.com/>en-us/azure/cognitive-services/>cognitive-services-apis-create-account)
->- Create and host a Azure Dev Tunnel. > Instructions [here](https://learn.microsoft.com/>en-us/azure/developer/dev-tunnels/get-started)
-
-[Azure DevTunnels](https://learn.microsoft.com/en-us/azure/developer/dev-tunnels/overview) is an Azure service that enables you to share local web services hosted on the internet. Use the commands below to connect your local development environment to the public internet. This creates a tunnel with a persistent endpoint URL and which allows anonymous access. We will then use this endpoint to notify your application of calling events from the ACS Call Automation service.
-
-#### Running it for the first time:
+If you prefer manual control:
 
 ```bash
-devtunnel login
+# 1. Deploy infrastructure
+cd automation
+terraform init
+terraform plan
+terraform apply
+
+# 2. Deploy application
+git add .
+git commit -m "Deploy Azure AI Voice Live integration"
+git push origin main
+
+# 3. Validate deployment
+python validate_deployment.py
+```
+
+### GitHub Actions Configuration
+
+Ensure your GitHub repository has the correct publish profile secret:
+
+1. Go to Azure Portal → App Services → your-app-name
+2. Click "Get publish profile" and download
+3. Go to GitHub → Settings → Secrets and variables → Actions
+4. Add secret: `AZUREAPPSERVICE_PUBLISHPROFILE_[UNIQUE_ID]`
+5. Paste the publish profile content
+
+## 🧪 **Testing**
+
+### Health Check Endpoints
+
+After deployment, test these endpoints:
+
+```bash
+# Basic health check
+curl https://your-app.azurewebsites.net/api/health
+
+# Voice Live integration test
+curl https://your-app.azurewebsites.net/api/testVoiceLive
+
+# Root endpoint
+curl https://your-app.azurewebsites.net/
+```
+
+### Phone Call Testing
+
+1. **Get your phone number** from the Terraform output
+2. **Call the number** - you should hear the Voice Live agent
+3. **Test conversation** - speak naturally and verify responses
+4. **Check logs** in Azure Portal → App Service → Log stream
+
+### Local Development Testing
+
+For local development with webhooks:
+
+```bash
+# 1. Start your application
+cd api
+python main.py
+
+# 2. Create dev tunnel (new terminal)
 devtunnel create --allow-anonymous
 devtunnel port create -p 8000
 devtunnel host
-```
-Add the devtunnel link structured as `https://<name>.devtunnels.ms:8080` to the `.env` file as callback URI host.
 
-#### Leveragin a previously created DevTunnel:
+# 3. Configure EventGrid subscription
+az eventgrid event-subscription create \
+  --name "local-testing" \
+  --source-resource-id "/subscriptions/.../communicationServices/your-acs" \
+  --endpoint "https://your-tunnel.devtunnels.ms/api/incomingCall" \
+  --included-event-types "Microsoft.Communication.IncomingCall"
+```
+
+## 🔧 **Troubleshooting**
+
+### Common Issues
+
+#### 1. "Unable to complete call" Error
+**Cause**: EventGrid webhook not configured
+**Solution**:
 ```bash
-devtunnel login
-devtunnel list
-# copy the name of the devtunnel you want to target
-devtunnel host <your devtunnel name> 
+# Verify webhook endpoint is accessible
+curl https://your-app.azurewebsites.net/api/incomingCall
+
+# Check EventGrid subscription exists
+az eventgrid event-subscription list --source-resource-id "your-acs-resource-id"
 ```
-Then run the python app by running `python3 api/main.py` on your terminal and check that it runs with no issues before proceeding.
 
-Once the tunnel is running, navigate to your Azure Event Grid System Topic resource and click on *+ Event Subscription*. Create a local subscription to your local app for the event `IncomingCall` as a webhook, with the URL `https://<your devtunnel name>.devtunnels.ms:8000/api/incomingCall`. Note that both the devtunnel and the python app should be running for this step to work.
+#### 2. Voice Live Connection Fails
+**Cause**: Invalid API key or endpoint
+**Solution**:
+```bash
+# Test Voice Live endpoint
+curl https://your-app.azurewebsites.net/api/testVoiceLive
 
-## Running it on Azure
-Once the IaC has been deployed, the web API should be ready to use. Feel free to configure the system message within constants.
+# Check environment variables in Azure Portal
+# App Service → Configuration → Application settings
+```
 
-## Test the app with an outbound phone call
+#### 3. GitHub Actions Build Fails
+**Cause**: Missing publish profile or dependencies
+**Solution**:
+- Verify publish profile secret is configured
+- Check `api/requirements.txt` exists
+- Review GitHub Actions logs for specific errors
 
-Send an HTTP request to the web API following the sample on `outbound.http`. To make the request on VSCode, you can use the *Rest Client* extension and then, on the file, click on *Send Request* on top of the `POST` method.
+#### 4. Application Won't Start
+**Cause**: Missing environment variables or startup issues
+**Solution**:
+```bash
+# Check Azure Portal logs
+# App Service → Log stream
 
-Make sure you send a payload that meets the requirements by leveraging the existing sample on the same file. The validation can be edited on `./api/src/core/app.py` within the `initiate_outbound_call()` function.
+# Verify all required environment variables are set
+# App Service → Configuration → Application settings
+```
+
+### Debug Commands
+
+```bash
+# Test Voice Live integration
+curl -X POST https://your-app.azurewebsites.net/api/testVoiceLiveCall \
+  -H "Content-Type: application/json" \
+  -d '{"phone_number": "+1234567890", "client_name": "Test User"}'
+
+# Check application health
+curl https://your-app.azurewebsites.net/api/health
+
+# Test outbound call
+curl -X POST https://your-app.azurewebsites.net/api/initiateOutboundCall \
+  -H "Content-Type: application/json" \
+  -d '{"phone_number": "+1234567890", "client_name": "Test User"}'
+```
+
+## 🏭 **Production Considerations**
+
+### Security
+- **API Keys**: Use Azure Key Vault for production secrets
+- **Network Security**: Implement IP whitelisting for webhooks
+- **Authentication**: Add proper authentication for admin endpoints
+- **HTTPS**: Ensure all endpoints use HTTPS
+
+### Performance
+- **Scaling**: Configure auto-scaling based on call volume
+- **Monitoring**: Set up Application Insights alerts
+- **Caching**: Optimize Redis configuration for your usage patterns
+- **Database**: Monitor Cosmos DB performance and costs
+
+### Monitoring
+- **Application Insights**: Track performance and errors
+- **Azure Monitor**: Set up alerts for critical metrics
+- **Log Analytics**: Centralize logging for troubleshooting
+- **Health Checks**: Implement comprehensive health monitoring
+
+### Cost Optimization
+- **Voice Live Usage**: Monitor API call costs
+- **ACS Charges**: Track phone number and calling costs
+- **Azure Services**: Right-size resources based on usage
+- **Auto-shutdown**: Consider dev/test environment automation
+
+## 📞 **Success Indicators**
+
+When everything is working correctly:
+
+✅ **Terraform deployment** completes without errors
+✅ **GitHub Actions** shows green checkmarks
+✅ **Health endpoints** return 200 OK
+✅ **Phone calls** connect and Voice Live responds
+✅ **Application logs** show Voice Live session creation
+✅ **Audio quality** is clear with low latency
+✅ **Conversations** flow naturally with interruption support
+
+## 🎉 **You're Ready!**
+
+Your Azure AI Voice Live integration is now production-ready! You have:
+
+- **Real-time voice agent** with < 500ms latency
+- **Advanced audio processing** with noise suppression
+- **Scalable infrastructure** deployed on Azure
+- **Comprehensive monitoring** and logging
+- **Fallback mechanisms** for reliability
+
+**Call your phone number and experience the future of voice AI!**
+
+---
+
+## 📚 **Additional Resources**
+
+- [Azure AI Voice Live Documentation](https://learn.microsoft.com/en-us/azure/ai-services/speech-service/voice-live)
+- [Azure Communication Services Call Automation](https://learn.microsoft.com/en-us/azure/communication-services/concepts/call-automation/)
+- [GitHub Repository](https://github.com/abs0914/acs-azopenai-voice-integration)
+- [Terraform Azure Provider](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs)
