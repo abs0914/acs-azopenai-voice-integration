@@ -20,7 +20,7 @@ class Config:
     OPENAI_ASSISTANT_ID = os.getenv("OPENAI_ASSISTANT_ID")
 
     # Azure AI Voice Live (Speech Service)
-    AZURE_VOICE_LIVE_ENDPOINT = os.getenv("AZURE_VOICE_LIVE_ENDPOINT", "https://eastus2.voice.speech.microsoft.com")
+    AZURE_VOICE_LIVE_ENDPOINT = os.getenv("AZURE_VOICE_LIVE_ENDPOINT", "https://vida-voice-live.cognitiveservices.azure.com")
     AZURE_VOICE_LIVE_API_KEY = os.getenv("AZURE_VOICE_LIVE_API_KEY")
     AZURE_VOICE_LIVE_REGION = os.getenv("AZURE_VOICE_LIVE_REGION", "eastus2")
     AZURE_VOICE_LIVE_MODEL = os.getenv("AZURE_VOICE_LIVE_MODEL", "gpt-4o")

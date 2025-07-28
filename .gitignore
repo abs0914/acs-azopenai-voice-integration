@@ -14,7 +14,6 @@ venv3/
 api/src/__pycache__/**
 automation/.terraform.lock.hcl
 *.zip
-automation/api_zip.zip
 logs/app.log
 api/logs/app.log
 api/src/__pycache__/__init__.cpython-312.pyc

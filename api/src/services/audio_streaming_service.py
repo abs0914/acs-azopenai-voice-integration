@@ -156,18 +156,22 @@ class AudioStreamingService:
 
             if event_type == "response.audio.delta":
                 # Handle audio response from Voice Live API
+                print(f"🔥 AUDIO DELTA EVENT: {json.dumps(event, indent=2)}")  # Debug print
                 self.logger.info(f"🎯 Full response.audio.delta event structure: {json.dumps(event, indent=2)}")
 
                 # Try different possible locations for audio data
                 audio_delta = None
                 if "delta" in event:
                     audio_delta = event["delta"]
+                    print(f"🔥 Found audio data in 'delta' field, length: {len(audio_delta) if audio_delta else 0}")
                     self.logger.info(f"🎯 Found audio data in 'delta' field")
                 elif "audio" in event:
                     audio_delta = event["audio"]
+                    print(f"🔥 Found audio data in 'audio' field, length: {len(audio_delta) if audio_delta else 0}")
                     self.logger.info(f"🎯 Found audio data in 'audio' field")
                 elif "data" in event:
                     audio_delta = event["data"]
+                    print(f"🔥 Found audio data in 'data' field, length: {len(audio_delta) if audio_delta else 0}")
                     self.logger.info(f"🎯 Found audio data in 'data' field")
 
                 self.logger.info(f"🎯 Received audio delta, length: {len(audio_delta) if audio_delta else 0} for call {call_connection_id}")

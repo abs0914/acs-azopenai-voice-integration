@@ -107,6 +107,7 @@ class CallAutomationApp:
         @self.app.websocket("/ws")
         async def websocket_handler():
             from quart import websocket
+            print("🔥 WEBSOCKET CONNECTION ATTEMPT ON /ws!")  # Debug print
             self.logger.info("🎯 WebSocket connection attempt detected on /ws")
             self.logger.info(f"WebSocket headers: {dict(websocket.headers) if hasattr(websocket, 'headers') else 'No headers'}")
             return await self.handle_websocket_media_streaming(websocket)
@@ -115,6 +116,7 @@ class CallAutomationApp:
         @self.app.websocket("/api/media-streaming")
         async def websocket_handler_alt():
             from quart import websocket
+            print("🔥 WEBSOCKET CONNECTION ATTEMPT ON /api/media-streaming!")  # Debug print
             self.logger.info("🎯 WebSocket connection attempt detected on /api/media-streaming")
             self.logger.info(f"WebSocket headers: {dict(websocket.headers) if hasattr(websocket, 'headers') else 'No headers'}")
             return await self.handle_websocket_media_streaming(websocket)
@@ -142,6 +144,7 @@ class CallAutomationApp:
 
     async def incoming_call_handler(self):
         """Handle incoming calls"""
+        print("🔥 INCOMING CALL HANDLER TRIGGERED!")  # Debug print
         self.logger.info("incoming_call_handler")
         try:
             # Get the raw request data as JSON

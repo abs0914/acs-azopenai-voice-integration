@@ -1,5 +1,38 @@
-# Minimal requirements for GitHub Actions workflow
-# Actual dependencies will be installed at runtime
+# Core web framework
+quart==0.19.9
+uvicorn==0.32.0
+gunicorn==23.0.0
+
+# HTTP and utilities
 requests==2.32.3
+python-dotenv==1.0.1
+
+# Azure Communication Services
+azure-communication-callautomation==1.2.0
+azure-communication-phonenumbers==1.2.0b3
+
+# Azure Core Services
+azure-core==1.32.0
+azure-eventgrid==4.20.0
+azure-cosmos==4.8.0
+azure-identity==1.15.0
+
+# Azure AI and Search
+azure-search-documents==11.5.2
+
+# OpenAI and AI Services
+openai==1.57.2
+
+# Data storage and caching
+redis==5.2.1
+
+# WebSocket support for Voice Live API
 websockets==12.0
+aiohttp==3.9.1
+
+# Audio processing (for Voice Live API integration)
 numpy==1.24.3
+sounddevice==0.4.6
+
+# Additional utilities
+langchain-community==0.3.5

@@ -106,7 +106,7 @@ The repository includes an `automation` folder containing Terraform definitions 
 Within the `automation` directory, you will find:
 - **Terraform Configuration Files**: Files like `acs.tf`, `openai.tf`, `cognitive_services.tf`, `cosmos.tf`, and `redis.tf` define the services required for the Recruitment Voice Assistant.
 - **Modules**: The `modules` directory provides reusable Terraform modules, enabling a modular and maintainable infrastructure codebase.
-- **API Deployment**: The `api_zip.zip` file, along with `app.tf` and other resource definitions, illustrate how the application is packaged and deployed onto Azure Functions or Web Apps.
+- **API Deployment**: The `app.tf` and other resource definitions illustrate how the application is packaged and deployed onto Azure Functions or Web Apps.
 - **State Management**: The `backend.tf` file ensures that Terraform maintains state in remote Azure storage.
 - **Phone Number Acquisition**: Scripts like `purchase_phone_number.py` can integrate with ACS to provision phone numbers for voice interaction.
 - **Environment Variables**: Before running the automation, rename the `.env.sample` file to `.env` and populate it with the required environment variables for local development and testing.
