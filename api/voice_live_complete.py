@@ -172,9 +172,8 @@ Start conversations with: "Hi my name is Emma. I'm your health advisor specializ
                     "type": "server_echo_cancellation"
                 },
                 "voice": {
-                    "name": "en-US-Emma2:DragonHDLatestNeural",
-                    "type": "azure-standard",
-                    "temperature": 0.7
+                    "name": "en-US-EmmaNeural",
+                    "type": "azure-standard"
                 }
             },
             "event_id": str(uuid.uuid4())
@@ -183,12 +182,32 @@ Start conversations with: "Hi my name is Emma. I'm your health advisor specializ
         logger.info("⚙️ Configuring Voice Live session...")
         await self.voice_live_ws.send(json.dumps(session_config))
         
-        # Voice Live is ready - no initial greeting needed since ACS handles it
+        # Voice Live is ready - now trigger the initial greeting
         logger.info("🎤 Voice Live ready for conversation")
-    
-    # send_greeting method removed - using single ACS greeting only
+
+        # Send initial greeting through Voice Live
+        await self.send_initial_greeting()
         logger.info("👋 Initial greeting sent to Voice Live")
-    
+
+    async def send_initial_greeting(self):
+        """Send initial greeting through Voice Live to start the conversation"""
+        try:
+            # Create a response that will make Emma speak immediately
+            greeting_response = {
+                "type": "response.create",
+                "response": {
+                    "modalities": ["text", "audio"],
+                    "instructions": "Greet the caller immediately with: 'Hi, my name is Emma. I'm your health advisor specializing in laboratory and medical imaging services. How can I help you today?'"
+                },
+                "event_id": str(uuid.uuid4())
+            }
+
+            await self.voice_live_ws.send(json.dumps(greeting_response))
+            logger.info("📤 Sent initial greeting request to Voice Live")
+
+        except Exception as e:
+            logger.error(f"❌ Error sending initial greeting: {e}")
+
     async def handle_voice_live_messages(self):
         """Handle messages from Voice Live API"""
         try:
@@ -413,9 +432,14 @@ async def health_check():
 async def handle_incoming_call():
     """Handle incoming call events from Event Grid"""
     try:
+        logger.info("📞 INCOMING CALL EVENT RECEIVED!")
+
         # Get the request body
         req_body = await request.get_data()
+        logger.info(f"📞 Request body length: {len(req_body)} bytes")
+
         events = json.loads(req_body)
+        logger.info(f"📞 Number of events: {len(events)}")
 
         for event in events:
             # Handle Event Grid validation
@@ -520,7 +544,7 @@ async def send_voice_live_greeting(call_connection_id: str):
             success = await voice_live_handler.connect_to_voice_live(call_connection_id)
             if not success:
                 logger.error("❌ Failed to connect to Voice Live, falling back to ACS greeting")
-                await send_acs_greeting_fallback(call_connection_id)
+                await send_simple_acs_greeting(call_connection_id)
                 return
 
         # For Voice Live, we need to trigger an immediate response without user input
@@ -562,7 +586,7 @@ async def send_voice_live_greeting(call_connection_id: str):
         logger.error(f"❌ Error starting Voice Live greeting: {e}")
         logger.error(traceback.format_exc())
         # Fallback to ACS greeting
-        await send_acs_greeting_fallback(call_connection_id)
+        await send_simple_acs_greeting(call_connection_id)
 
 async def send_immediate_acs_greeting(call_connection_id: str):
     """Send immediate ACS greeting to ensure caller hears Emma right away"""
@@ -601,6 +625,8 @@ async def send_immediate_acs_greeting(call_connection_id: str):
         logger.info(f"✅ play_media_to_all result: {result}")
         logger.info(f"✅ Immediate ACS greeting sent for call {call_connection_id}")
 
+        # No follow-up messages - Emma waits for response after greeting
+
     except Exception as e:
         logger.error(f"❌ Error sending immediate ACS greeting: {e}")
         logger.error(f"❌ Call connection ID: {call_connection_id}")
@@ -628,30 +654,176 @@ async def send_simple_fallback_greeting(call_connection_id: str):
     except Exception as e:
         logger.error(f"❌ Simple fallback greeting failed: {e}")
 
-async def send_acs_greeting_fallback(call_connection_id: str):
-    """Fallback ACS greeting if Voice Live fails"""
+async def start_voice_live_listening(call_connection_id: str):
+    """Configure Voice Live to start listening for user input after greeting"""
     try:
-        logger.info(f"📢 Sending ACS fallback greeting for call {call_connection_id}")
+        logger.info(f"🎤 Starting Voice Live listening mode for call {call_connection_id}")
+
+        if not voice_live_handler.is_connected or not voice_live_handler.voice_live_ws:
+            logger.error("❌ Voice Live not connected - cannot start listening")
+            return False
+
+        # Clear any existing audio buffer
+        clear_buffer = {
+            "type": "input_audio_buffer.clear",
+            "event_id": str(uuid.uuid4())
+        }
+        await voice_live_handler.voice_live_ws.send(json.dumps(clear_buffer))
+        logger.info("🧹 Cleared Voice Live audio buffer")
+
+        # Send a system message to indicate Emma is ready to listen
+        listening_message = {
+            "type": "conversation.item.create",
+            "item": {
+                "type": "message",
+                "role": "system",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "Emma has finished her greeting and is now listening for the user's response. Respond naturally to whatever the user says next."
+                    }
+                ]
+            },
+            "event_id": str(uuid.uuid4())
+        }
+
+        await voice_live_handler.voice_live_ws.send(json.dumps(listening_message))
+        logger.info("📝 Sent listening mode message to Voice Live")
+
+        # Voice Live is now ready to receive audio through the WebSocket
+        logger.info("✅ Voice Live listening mode activated - ready for user input")
+        logger.info("🎤 Voice Live will now process audio from the WebSocket stream")
+        return True
+
+    except Exception as e:
+        logger.error(f"❌ Error starting Voice Live listening: {e}")
+        logger.error(traceback.format_exc())
+        return False
+
+async def send_followup_instructions(call_connection_id: str):
+    """Send follow-up instructions if media streaming doesn't work"""
+    try:
+        # Wait for the greeting to complete
+        await asyncio.sleep(8)
+
+        logger.info(f"📋 Sending follow-up instructions for call {call_connection_id}")
 
         # Get the call connection
         call_connection = call_automation_client.get_call_connection(call_connection_id)
 
-        # Create simple greeting message
-        greeting_text = "Hi, this is Emma. I'm your health advisor. How can I help you today?"
+        # Send instructions for DTMF or callback
+        instructions_text = """I'm ready to help you schedule your appointment.
+        If you can hear me but I'm not responding to your voice, please press 1 for MRI appointments,
+        2 for lab work, or 3 for other imaging services.
+        Or you can call us back at 1-800-HEALTH for immediate assistance."""
 
-        # Use ACS text-to-speech to play the greeting
+        from azure.communication.callautomation import TextSource
+        play_source = TextSource(
+            text=instructions_text,
+            voice_name="en-US-AriaNeural"
+        )
+
+        call_connection.play_media_to_all(
+            play_source=play_source,
+            operation_context="followup-instructions"
+        )
+
+        logger.info(f"✅ Follow-up instructions sent for call {call_connection_id}")
+
+    except Exception as e:
+        logger.error(f"❌ Error sending follow-up instructions: {e}")
+
+async def enable_dtmf_backup(call_connection_id: str):
+    """Enable DTMF input as backup when voice streaming fails"""
+    try:
+        logger.info(f"🔢 Enabling DTMF backup for call {call_connection_id}")
+
+        call_connection = call_automation_client.get_call_connection(call_connection_id)
+
+        # Start DTMF recognition
+        from azure.communication.callautomation import DtmfOptions
+
+        dtmf_options = DtmfOptions(
+            max_tones_to_collect=1,
+            initial_silence_timeout=30,
+            inter_tone_timeout=5,
+            play_prompt=None,
+            operation_context="dtmf-backup"
+        )
+
+        call_connection.start_recognizing_media(
+            input_type="dtmf",
+            target_participant="",
+            dtmf_options=dtmf_options
+        )
+
+        logger.info("✅ DTMF backup enabled - caller can press keys")
+
+    except Exception as e:
+        logger.error(f"❌ Error enabling DTMF backup: {e}")
+
+async def handle_dtmf_input(event):
+    """Handle DTMF input when voice doesn't work"""
+    try:
+        dtmf_result = event.get("data", {}).get("recognizeResult", {})
+        tones = dtmf_result.get("collectTonesResult", {}).get("tones", [])
+        call_connection_id = event.get("data", {}).get("callConnectionId")
+
+        if not tones or not call_connection_id:
+            return
+
+        tone = tones[0]
+        logger.info(f"🔢 DTMF tone received: {tone}")
+
+        call_connection = call_automation_client.get_call_connection(call_connection_id)
+
+        # Respond based on DTMF input
+        if tone == "1":
+            response_text = "You pressed 1 for MRI appointments. We have availability Monday through Friday from 8 AM to 6 PM. Please call us at 1-800-HEALTH to schedule your MRI appointment."
+        elif tone == "2":
+            response_text = "You pressed 2 for lab work. We're open Monday through Saturday from 7 AM to 4 PM for blood tests and lab services. Please call 1-800-HEALTH to schedule."
+        elif tone == "3":
+            response_text = "You pressed 3 for other imaging services. We offer X-rays, ultrasounds, and CT scans with same-day availability. Please call 1-800-HEALTH for scheduling."
+        else:
+            response_text = "Thank you for calling. For immediate assistance with scheduling any medical appointments, please call us at 1-800-HEALTH."
+
+        from azure.communication.callautomation import TextSource
+        play_source = TextSource(
+            text=response_text,
+            voice_name="en-US-AriaNeural"
+        )
+
+        call_connection.play_media_to_all(play_source)
+        logger.info(f"✅ DTMF response sent for tone: {tone}")
+
+    except Exception as e:
+        logger.error(f"❌ Error handling DTMF input: {e}")
+
+async def send_simple_acs_greeting(call_connection_id: str):
+    """Simple ACS greeting - just one message, then Voice Live takes over"""
+    try:
+        logger.info(f"📢 Sending simple ACS greeting for call {call_connection_id}")
+
+        call_connection = call_automation_client.get_call_connection(call_connection_id)
+
+        # Simple greeting - Emma introduces herself and waits
+        greeting_text = "Hi, my name is Emma. I'm your health advisor. How can I help you today?"
+
         from azure.communication.callautomation import TextSource
         play_source = TextSource(
             text=greeting_text,
             voice_name="en-US-AriaNeural"
         )
 
-        # Play the greeting
-        call_connection.play_media_to_all(play_source)
-        logger.info(f"✅ ACS fallback greeting sent for call {call_connection_id}")
+        # Play greeting and immediately enable Voice Live listening
+        call_connection.play_media_to_all(
+            play_source=play_source,
+            operation_context="simple-greeting"
+        )
+        logger.info(f"✅ Simple ACS greeting sent - Voice Live will take over")
 
     except Exception as e:
-        logger.error(f"❌ Error sending ACS fallback greeting: {e}")
+        logger.error(f"❌ Error sending simple ACS greeting: {e}")
 
 async def send_simple_greeting(call_connection_id: str):
     """Send a simple greeting as fallback"""
@@ -748,10 +920,13 @@ To schedule your appointment, please call us back at 1-800-HEALTH or visit our w
 async def handle_call_events(context_id: str):
     """Handle call automation events"""
     try:
-        req_body = await request.get_data()
-        events = json.loads(req_body)
+        logger.info(f"📝 CALLBACK RECEIVED for context: {context_id}")
 
-        logger.info(f"📝 Received callback for context: {context_id}")
+        req_body = await request.get_data()
+        logger.info(f"📝 Callback body length: {len(req_body)} bytes")
+
+        events = json.loads(req_body)
+        logger.info(f"📝 Number of callback events: {len(events)}")
 
         for event in events:
             event_type = event.get("type")
@@ -764,7 +939,7 @@ async def handle_call_events(context_id: str):
                     # Use ACS greeting immediately to ensure caller hears Emma
                     # Voice Live will take over after the greeting completes
                     logger.info("� Sending immediate ACS greeting to ensure caller hears Emma")
-                    await send_immediate_acs_greeting(call_connection_id)
+                    await send_simple_acs_greeting(call_connection_id)
 
             elif event_type == "Microsoft.Communication.CallDisconnected":
                 logger.info("📞 Call disconnected")
@@ -781,18 +956,10 @@ async def handle_call_events(context_id: str):
                 operation_context = event.get("data", {}).get("operationContext", "")
                 call_connection_id = event.get("data", {}).get("callConnectionId")
 
-                if operation_context == "emma-greeting" and call_connection_id:
-                    logger.info("🎤 Emma's greeting completed - transitioning to Voice Live for real-time conversation")
-                    # Now that caller has heard Emma, enable Voice Live for real-time conversation
-                    try:
-                        # Ensure Voice Live is ready for the conversation
-                        if not voice_live_handler.is_connected:
-                            logger.info("🔄 Connecting to Voice Live for real-time conversation")
-                            await voice_live_handler.connect_to_voice_live(call_connection_id)
-
-                        logger.info("✅ Voice Live ready - caller can now speak and Emma will respond in real-time")
-                    except Exception as e:
-                        logger.error(f"❌ Error setting up Voice Live after greeting: {e}")
+                if operation_context == "simple-greeting" and call_connection_id:
+                    logger.info("🎤 Simple greeting completed - Voice Live should now be listening")
+                    # Voice Live is already connected and listening - no additional setup needed
+                    logger.info("✅ Emma is now listening for your response via Voice Live")
                 else:
                     logger.info(f"🎤 Play completed with context: {operation_context}")
 
@@ -811,7 +978,15 @@ async def handle_call_events(context_id: str):
 
             elif event_type == "Microsoft.Communication.MediaStreamingFailed":
                 logger.error(f"❌ Media streaming failed: {json.dumps(event, indent=2)}")
-                # Try to continue without media streaming
+                # Media streaming failed - voice won't work, so enable DTMF as backup
+                call_connection_id = event.get("data", {}).get("callConnectionId")
+                if call_connection_id:
+                    await enable_dtmf_backup(call_connection_id)
+
+            elif event_type == "Microsoft.Communication.RecognizeCompleted":
+                logger.info("🔢 DTMF input received")
+                # Handle DTMF input as backup when voice doesn't work
+                await handle_dtmf_input(event)
 
         return Response("OK", status=200)
 
@@ -822,9 +997,9 @@ async def handle_call_events(context_id: str):
 @app.websocket("/ws/audio-stream")
 async def handle_audio_stream():
     """Handle bidirectional audio streaming WebSocket for Voice Live integration"""
-    logger.info("🔌 WebSocket handler called")
+    logger.info("🔌 WEBSOCKET CONNECTION ATTEMPT!")
     try:
-        logger.info("🔌 Audio stream WebSocket connected")
+        logger.info("🔌 AUDIO STREAM WEBSOCKET CONNECTED!")
 
         # Store the websocket connection properly
         app.current_call_ws = websocket
@@ -838,11 +1013,13 @@ async def handle_audio_stream():
                 # Handle different message types from ACS MediaStreaming
                 if isinstance(message, bytes):
                     # Binary audio data from ACS
-                    logger.debug(f"📥 Received binary audio data: {len(message)} bytes")
+                    logger.info(f"🎤 Received binary caller audio: {len(message)} bytes - sending to Voice Live")
 
                     # Forward audio to Voice Live
                     if voice_live_handler.is_connected:
                         await voice_live_handler.send_audio_to_voice_live(message)
+                    else:
+                        logger.warning("⚠️  Voice Live not connected - audio lost!")
 
                 elif isinstance(message, str):
                     # JSON message from ACS
@@ -856,10 +1033,12 @@ async def handle_audio_stream():
                             audio_data_base64 = data.get("audioData", {}).get("data", "")
                             if audio_data_base64:
                                 audio_bytes = base64.b64decode(audio_data_base64)
-                                logger.debug(f"📥 Received JSON audio data: {len(audio_bytes)} bytes")
+                                logger.info(f"🎤 Received caller audio: {len(audio_bytes)} bytes - sending to Voice Live")
 
                                 # Send to Voice Live for processing
                                 await voice_live_handler.process_call_audio(audio_bytes)
+                            else:
+                                logger.warning("⚠️  Received audioData message but no audio data")
 
                         elif message_kind == "stopAudio":
                             logger.info("🔇 Stop audio message received")

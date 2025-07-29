@@ -18,37 +18,23 @@ try:
         print("🏥 Running in health check only mode")
         from health import app
     else:
-        print("🔧 Attempting to start full application...")
+        print("🔧 Attempting to start Voice Live integration...")
 
-        # Try to import required modules first
+        # Try to import Voice Live integration
         try:
-            from startup import check_required_env_vars
-            from src.core.app import CallAutomationApp
-
-            print("✅ All modules imported successfully")
-
-            # Check required environment variables first
-            check_required_env_vars()
-
-            # Create application instance
-            print("🏗️ Creating application instance...")
-            app_instance = CallAutomationApp()
-            # Get the Quart app instance
-            app = app_instance.app
-
-            print("✅ Application instance created successfully")
-
-            if __name__ == "__main__":
-                port = int(os.getenv("PORT", "8000"))
-                print(f"🌐 Starting server on port {port}...")
-                app_instance.run(host="0.0.0.0", port=port)
+            print("📦 Importing Voice Live integration...")
+            from voice_live_complete import app
+            print("✅ Voice Live integration imported successfully")
+            print("🎉 Voice Live integration ready!")
 
         except ImportError as ie:
-            print(f"❌ Import error: {str(ie)}")
-            raise ie
+            print(f"❌ Failed to import Voice Live integration: {ie}")
+            print("🔄 Falling back to health check mode...")
+            from health import app
         except Exception as ae:
-            print(f"❌ Application error: {str(ae)}")
-            raise ae
+            print(f"❌ Failed to start Voice Live integration: {ae}")
+            print("🔄 Falling back to health check mode...")
+            from health import app
 
 except Exception as e:
     print(f"❌ Error starting application: {str(e)}")

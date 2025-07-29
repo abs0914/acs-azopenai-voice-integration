@@ -2,13 +2,14 @@
 quart==0.19.9
 uvicorn==0.32.0
 gunicorn==23.0.0
+hypercorn==0.16.0
 
 # HTTP and utilities
 requests==2.32.3
 python-dotenv==1.0.1
 
-# Azure Communication Services
-azure-communication-callautomation==1.2.0
+# Azure Communication Services (Preview SDK for Media Streaming)
+azure-communication-callautomation==1.4.0b1
 azure-communication-phonenumbers==1.2.0b3
 
 # Azure Core Services
