@@ -27,7 +27,7 @@ A production-ready voice assistant solution using Azure AI Voice Live API for re
 
 ```bash
 # 1. Clone and setup
-git clone https://github.com/abs0914/acs-azopenai-voice-integration.git
+git clone https://github.com/Azure-Samples/acs-azopenai-voice-integration.git
 cd acs-azopenai-voice-integration
 
 # 2. Configure your API key
@@ -315,9 +315,14 @@ curl https://your-app.azurewebsites.net/
 ### Phone Call Testing
 
 1. **Get your phone number** from the Terraform output
-2. **Call the number** - you should hear the Voice Live agent
-3. **Test conversation** - speak naturally and verify responses
-4. **Check logs** in Azure Portal → App Service → Log stream
+2. **Call the number** - Emma will answer with her greeting:
+   > *"Hi, my name is Emma. I'm your health advisor specializing in laboratory and medical imaging services. How can I help you today?"*
+3. **Test conversation** - Try these example interactions:
+   - *"Can you schedule an MRI appointment for me?"*
+   - *"What preparation is needed for blood work?"*
+   - *"Tell me about your CT scan services"*
+4. **Verify AI responses** - Emma should respond naturally with healthcare-specific information
+5. **Check logs** in Azure Portal → App Service → Log stream for Voice Live session details
 
 ### Local Development Testing
 
@@ -442,15 +447,17 @@ When everything is working correctly:
 
 ## 🎉 **You're Ready!**
 
-Your Azure AI Voice Live integration is now production-ready! You have:
+Your Azure AI Voice Live integration with Emma is now production-ready! You have:
 
-- **Real-time voice agent** with < 500ms latency
-- **Advanced audio processing** with noise suppression
-- **Scalable infrastructure** deployed on Azure
-- **Comprehensive monitoring** and logging
-- **Fallback mechanisms** for reliability
+- **Emma, your AI health advisor** ready to greet callers and assist with healthcare services
+- **Intelligent greeting system** that introduces Emma and her capabilities
+- **Real-time voice processing** with < 500ms latency using Azure AI Voice Live
+- **Healthcare-focused conversations** for medical imaging and laboratory services
+- **Advanced audio processing** with noise suppression and echo cancellation
+- **Scalable infrastructure** deployed on Azure with comprehensive monitoring
+- **Natural conversation flow** with interruption support and context awareness
 
-**Call your phone number and experience the future of voice AI!**
+**Call your phone number and meet Emma - your AI health advisor!**
 
 ---
 
