@@ -22,7 +22,8 @@ class EventHandlers:
                  cosmosdb_service: CosmosDBService,
                  voice_live_service: VoiceLiveService,
                  audio_streaming_service: AudioStreamingService,
-                 config):
+                 config,
+                 app=None):
         self.call_handler = call_handler
         self.cache_service = cache_service
         self.openai_service = openai_service
@@ -30,6 +31,7 @@ class EventHandlers:
         self.voice_live_service = voice_live_service
         self.audio_streaming_service = audio_streaming_service
         self.config = config
+        self.app = app  # Reference to main app for direct Voice Live integration
         self.max_retry = 2
         self._setup_context_handlers()
         # Initialize logger
@@ -103,10 +105,13 @@ class EventHandlers:
             phone_number: Caller or Target's phone number depending on whether it's an incoming or outgoing call
         """
         try:
+            self.logger.info(f"CALL CONNECTED EVENT RECEIVED for phone {phone_number}")
             call_connection_id = event.data.get("callConnectionId")
             if not call_connection_id:
                 self.logger.error("Missing callConnectionId in CallConnected event")
                 return
+
+            self.logger.info(f"Processing CallConnected for call {call_connection_id}")
 
             # Initialize the conversation state
             await self.cache_service.set(f"call_active:{call_connection_id}", True)
@@ -153,9 +158,24 @@ class EventHandlers:
 
                 self.logger.info(f"Voice Live session started successfully for call {call_connection_id}")
             else:
-                self.logger.error(f"Failed to start Voice Live streaming for call {call_connection_id}")
-                # Fallback to traditional approach if Voice Live fails
-                await self._fallback_to_traditional_approach(call_connection_id, participant_id, payload_dict)
+                self.logger.warning(f"Voice Live streaming failed for call {call_connection_id}, trying direct integration")
+                # Try direct Voice Live integration when MediaStreaming is not available
+                try:
+                    self.logger.info(f"Attempting direct Voice Live integration for call {call_connection_id}")
+                    # Use the app instance passed during initialization
+                    if self.app and hasattr(self.app, '_start_direct_voice_live_integration'):
+                        self.logger.info(f"Calling _start_direct_voice_live_integration for call {call_connection_id}")
+                        await self.app._start_direct_voice_live_integration(call_connection_id)
+                        self.logger.info(f"✅ Direct Voice Live integration started for call {call_connection_id}")
+                    else:
+                        self.logger.error("Direct Voice Live integration method not available")
+                        self.logger.error(f"App instance: {self.app}, has method: {hasattr(self.app, '_start_direct_voice_live_integration') if self.app else 'No app'}")
+                        # Fallback to traditional approach if direct Voice Live also fails
+                        await self._fallback_to_traditional_approach(call_connection_id, participant_id, payload_dict)
+                except Exception as direct_error:
+                    self.logger.error(f"Direct Voice Live integration failed: {direct_error}")
+                    # Fallback to traditional approach if Voice Live fails
+                    await self._fallback_to_traditional_approach(call_connection_id, participant_id, payload_dict)
 
         except Exception as e:
             self.logger.error(f"Error in handle_call_connected: {str(e)}", exc_info=True)

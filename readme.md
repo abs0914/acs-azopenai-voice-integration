@@ -74,7 +74,7 @@ flowchart TB
     API --> VL[Azure AI Voice Live API]
     API --> Cache[Redis Cache]
     API --> DB[Cosmos DB]
-    
+
     VL --> |Real-time Audio| API
     API --> |Audio Response| ACS
     ACS --> |Voice Output| U
@@ -134,7 +134,7 @@ pip install -r api/requirements.txt
    ```hcl
    # Required: Your Azure Voice Live API key
    azure_voice_live_api_key = "YOUR_ACTUAL_API_KEY_HERE"
-   
+
    # Optional: Customize deployment
    prefix = "tf-ai"
    name = "aivoice"
@@ -205,6 +205,21 @@ AZURE_OPENAI_SERVICE_ENDPOINT="https://your-openai.openai.azure.com/"
 AZURE_OPENAI_SERVICE_KEY="your-openai-key"
 ```
 
+### Critical: Bidirectional Streaming Configuration
+
+**IMPORTANT**: The application enables bidirectional streaming to allow Azure Communication Services to inject Voice Live responses back into the call:
+
+```python
+# This configuration is CRITICAL for two-way audio
+media_streaming_options = MediaStreamingOptions(
+    transport_url=websocket_uri,
+    transport_type=MediaStreamingTransportType.WEBSOCKET,
+    content_type=MediaStreamingContentType.AUDIO,
+    audio_channel_type=MediaStreamingAudioChannelType.MIXED,
+    start_media_streaming=True,
+    enable_bidirectional_streaming=True  # Without this, ACS won't inject responses
+)
+```
 ### Voice Live Session Configuration
 
 The application automatically configures optimal settings:

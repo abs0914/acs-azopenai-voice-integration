@@ -7,12 +7,31 @@ from azure.core.messaging import CloudEvent
 from azure.communication.callautomation import (
     PhoneNumberIdentifier,
     CallAutomationClient,
-    MediaStreamingOptions,
-    MediaStreamingContentType,
-    MediaStreamingAudioChannelType,
-    MediaStreamingTransportType,
     TextSource
 )
+
+# Try to import MediaStreaming classes, fallback if not available
+try:
+    from azure.communication.callautomation import (
+        MediaStreamingOptions,
+        MediaStreamingContentType,
+        MediaStreamingAudioChannelType,
+        MediaStreamingTransportType
+    )
+    MEDIA_STREAMING_AVAILABLE = True
+except ImportError:
+    print("⚠️  MediaStreaming classes not available in current azure-communication-callautomation version")
+    MEDIA_STREAMING_AVAILABLE = False
+    # Create dummy classes to prevent import errors
+    class MediaStreamingOptions:
+        def __init__(self, **kwargs):
+            pass
+    class MediaStreamingContentType:
+        AUDIO = "audio"
+    class MediaStreamingAudioChannelType:
+        MIXED = "mixed"
+    class MediaStreamingTransportType:
+        WEBSOCKET = "websocket"
 from azure.core.exceptions import AzureError
 import asyncio
 
@@ -65,6 +84,7 @@ class CallAutomationApp:
             voice_live_service=self.voice_live_service,
             audio_streaming_service=self.audio_streaming_service,
             config=self.config,
+            app=self,  # Pass app instance for direct Voice Live integration
         )
 
         self.setup_routes()
@@ -360,12 +380,14 @@ class CallAutomationApp:
             # self.logger.info(f"Processing callback for caller: {caller_id}")
 
             for event_dict in events:
+                self.logger.info(f"RAW EVENT RECEIVED: {json.dumps(event_dict)}")
                 event = CloudEvent.from_dict(event_dict)
+                self.logger.info(f"EVENT TYPE: {event.type}")
                 call_connection_id = event.data.get("callConnectionId")
                 if not call_connection_id:
                     self.logger.error("Missing callConnectionId in event data")
                     continue  # Skip processing this event if no call_connection_id is found
-                
+
                 self.logger.info(f"[Call Connection ID: {call_connection_id}] Received callback for context: {context_id}")
                 self.logger.info(f"[Call Connection ID: {call_connection_id}] Event data: {json.dumps(event_dict)}")
 
@@ -392,7 +414,8 @@ class CallAutomationApp:
 
     async def _process_event(self, event: CloudEvent, caller_id: str):
         """Process different types of events"""
-        self.logger.info(f"Processing event type: {event.type}")
+        self.logger.info(f"PROCESSING EVENT: {event.type} for caller {caller_id}")
+        self.logger.info(f"Event data keys: {list(event.data.keys()) if hasattr(event, 'data') and event.data else 'No data'}")
         event_handlers = {
             EventTypes.CALL_CONNECTED: self.event_handlers.handle_call_connected,
             EventTypes.RECOGNIZE_COMPLETED: self.event_handlers.handle_recognize_completed,
@@ -433,18 +456,36 @@ class CallAutomationApp:
             websocket_uri = f"wss://{callback_host}/ws"
         self.logger.info(f"Setting up media streaming with WebSocket URI: {websocket_uri}")
 
-        # Configure media streaming options for Voice Live integration
-        media_streaming_options = MediaStreamingOptions(
-            transport_url=websocket_uri,
-            transport_type=MediaStreamingTransportType.WEBSOCKET,
-            content_type=MediaStreamingContentType.AUDIO,
-            audio_channel_type=MediaStreamingAudioChannelType.MIXED,
-            start_media_streaming=True
-        )
+        # Configure media streaming options for Voice Live integration with bidirectional streaming
+        if MEDIA_STREAMING_AVAILABLE:
+            try:
+                media_streaming_options = MediaStreamingOptions(
+                    transport_url=websocket_uri,
+                    transport_type=MediaStreamingTransportType.WEBSOCKET,
+                    content_type=MediaStreamingContentType.AUDIO,
+                    audio_channel_type=MediaStreamingAudioChannelType.MIXED,
+                    start_media_streaming=True,
+                    enable_bidirectional_streaming=True  # Critical: Enable two-way audio streaming
+                )
+            except TypeError:
+                # Fallback for older versions without enable_bidirectional_streaming
+                media_streaming_options = MediaStreamingOptions(
+                    transport_url=websocket_uri,
+                    transport_type=MediaStreamingTransportType.WEBSOCKET,
+                    content_type=MediaStreamingContentType.AUDIO,
+                    audio_channel_type=MediaStreamingAudioChannelType.MIXED,
+                    start_media_streaming=True
+                )
+                self.logger.warning("⚠️  Using older MediaStreamingOptions without bidirectional streaming")
+        else:
+            self.logger.warning("⚠️  MediaStreaming not available - using direct Voice Live integration")
+            media_streaming_options = None
 
         # Answer call - run in thread pool to avoid blocking
         if media_streaming_options:
-            self.logger.info("Answering call with Voice Live media streaming enabled")
+            self.logger.info("✅ Answering call with Voice Live BIDIRECTIONAL media streaming enabled")
+            self.logger.info(f"🎯 WebSocket URI: {websocket_uri}")
+            self.logger.info(f"🔄 Bidirectional streaming: ENABLED")
         else:
             self.logger.info("Answering call WITHOUT media streaming - using direct Voice Live integration")
 
@@ -461,7 +502,7 @@ class CallAutomationApp:
 
     async def _process_incoming_call_async(self, event_dict: dict):
         """Process incoming call event asynchronously without blocking webhook response"""
-        self.logger.info("_process_incoming_call_async event")
+        self.logger.info("DEBUG: _process_incoming_call_async event STARTED")
 
         try:
             caller_id = self._extract_caller_id(event_dict.get("data", {}))
@@ -498,6 +539,15 @@ class CallAutomationApp:
                 f"Answered call for connection id: {answer_call_result.call_connection_id}"
             )
 
+            # Since CallConnected event might not be sent, start Voice Live integration immediately
+            self.logger.info(f"Starting Voice Live integration immediately for call {answer_call_result.call_connection_id}")
+            try:
+                await self._start_direct_voice_live_integration(answer_call_result.call_connection_id)
+                self.logger.info(f"✅ Direct Voice Live integration started immediately for call {answer_call_result.call_connection_id}")
+            except Exception as voice_live_error:
+                self.logger.error(f"Failed to start Voice Live integration immediately: {voice_live_error}")
+                # Continue without Voice Live - call will still be answered
+
         except Exception as e:
             self.logger.error(
                 f"Error in _process_incoming_call_async: {str(e)}", exc_info=True
@@ -505,7 +555,7 @@ class CallAutomationApp:
 
     async def _process_incoming_call(self, event: EventGridEvent):
         """Process incoming call event (legacy method)"""
-        self.logger.info("_process_incoming_call event")
+        self.logger.info("DEBUG: _process_incoming_call event STARTED (legacy method)")
 
         try:
             caller_id = self._extract_caller_id(event.data)
@@ -524,6 +574,15 @@ class CallAutomationApp:
                 f"Answered call for connection id: {answer_call_result.call_connection_id}"
             )
 
+            # Since CallConnected event might not be sent, start Voice Live integration immediately
+            self.logger.info(f"Starting Voice Live integration immediately for call {answer_call_result.call_connection_id}")
+            try:
+                await self._start_direct_voice_live_integration(answer_call_result.call_connection_id)
+                self.logger.info(f"✅ Direct Voice Live integration started immediately for call {answer_call_result.call_connection_id}")
+            except Exception as voice_live_error:
+                self.logger.error(f"Failed to start Voice Live integration immediately: {voice_live_error}")
+                # Continue without Voice Live - call will still be answered
+
         except Exception as e:
             self.logger.error(
                 f"Error in _process_incoming_call: {str(e)}", exc_info=True
@@ -533,7 +592,7 @@ class CallAutomationApp:
     async def _start_direct_voice_live_integration(self, call_connection_id: str):
         """Start direct Voice Live integration without WebSocket media streaming"""
         try:
-            self.logger.info(f"🎯 Starting direct Voice Live integration for call {call_connection_id}")
+            self.logger.info(f"Starting direct Voice Live integration for call {call_connection_id}")
 
             # Create a Voice Live session
             voice_live_session = await self.voice_live_service.create_voice_live_session(call_connection_id)
@@ -553,7 +612,7 @@ class CallAutomationApp:
     async def _send_voice_live_greeting(self, call_connection_id: str):
         """Send initial greeting using ACS text-to-speech"""
         try:
-            self.logger.info(f"🎯 Sending Voice Live greeting for call {call_connection_id}")
+            self.logger.info(f"Sending Voice Live greeting for call {call_connection_id}")
 
             # Get the call connection
             call_connection = self.call_automation_client.get_call_connection(call_connection_id)
@@ -570,7 +629,9 @@ class CallAutomationApp:
             )
 
             # Play the greeting
-            await call_connection.play_media_to_all(play_source)
+            self.logger.info(f"Playing greeting to call {call_connection_id}")
+            play_result = call_connection.play_media_to_all(play_source)
+            self.logger.info(f"Play media result: {play_result}")
 
             self.logger.info(f"✅ Voice Live greeting sent for call {call_connection_id}")
 

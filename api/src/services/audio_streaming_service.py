@@ -152,7 +152,7 @@ class AudioStreamingService:
         """Handle individual Voice Live API events"""
         try:
             event_type = event.get("type")
-            self.logger.info(f"🎯 Handling Voice Live event type: {event_type} for call {call_connection_id}")
+            self.logger.info(f"Handling Voice Live event type: {event_type} for call {call_connection_id}")
 
             if event_type == "response.audio.delta":
                 # Handle audio response from Voice Live API
@@ -164,7 +164,7 @@ class AudioStreamingService:
                 if "delta" in event:
                     audio_delta = event["delta"]
                     print(f"🔥 Found audio data in 'delta' field, length: {len(audio_delta) if audio_delta else 0}")
-                    self.logger.info(f"🎯 Found audio data in 'delta' field")
+                    self.logger.info(f"Found audio data in 'delta' field")
                 elif "audio" in event:
                     audio_delta = event["audio"]
                     print(f"🔥 Found audio data in 'audio' field, length: {len(audio_delta) if audio_delta else 0}")
@@ -174,16 +174,16 @@ class AudioStreamingService:
                     print(f"🔥 Found audio data in 'data' field, length: {len(audio_delta) if audio_delta else 0}")
                     self.logger.info(f"🎯 Found audio data in 'data' field")
 
-                self.logger.info(f"🎯 Received audio delta, length: {len(audio_delta) if audio_delta else 0} for call {call_connection_id}")
+                self.logger.info(f"Received audio delta, length: {len(audio_delta) if audio_delta else 0} for call {call_connection_id}")
                 if audio_delta:
                     # Decode base64 audio data
                     audio_data = base64.b64decode(audio_delta)
-                    self.logger.info(f"🎯 Decoded audio data, length: {len(audio_data)} bytes for call {call_connection_id}")
+                    self.logger.info(f"Decoded audio data, length: {len(audio_data)} bytes for call {call_connection_id}")
 
                     # Voice Live is configured to output at 24kHz PCM24 to match ACS format
                     # Send audio directly to ACS call
                     await self._send_audio_to_call(call_connection_id, audio_data)
-                    self.logger.info(f"🎯 Sent {len(audio_data)} bytes of audio to call {call_connection_id}")
+                    self.logger.info(f"Sent {len(audio_data)} bytes of audio to call {call_connection_id}")
                 else:
                     self.logger.warning(f"🎯 Empty audio delta received for call {call_connection_id}")
                     self.logger.warning(f"🎯 Available event keys: {list(event.keys())}")
@@ -290,8 +290,44 @@ class AudioStreamingService:
 
             self.logger.info(f"Sent initial greeting and triggered response for call {call_connection_id}")
 
+            # Also send ACS text-to-speech greeting since audio buffering is not working
+            try:
+                await self._send_acs_greeting(call_connection_id)
+            except Exception as greeting_error:
+                self.logger.error(f"Failed to send ACS greeting: {greeting_error}")
+
         except Exception as e:
             self.logger.error(f"Error configuring Voice Live session: {e}")
+
+    async def _send_acs_greeting(self, call_connection_id: str):
+        """Send initial greeting using ACS text-to-speech"""
+        try:
+            self.logger.info(f"Sending ACS greeting for call {call_connection_id}")
+
+            # Get the call connection
+            call_connection = self.call_automation_client.get_call_connection(call_connection_id)
+
+            # Create greeting message
+            greeting_text = """Hello! I'm Emma, your health advisor specializing in lab and imaging services.
+            I'm here to help you understand your test results, schedule appointments, and answer any health-related questions you may have.
+            How can I help you today?"""
+
+            # Use ACS text-to-speech to play the greeting
+            from azure.communication.callautomation import TextSource
+            play_source = TextSource(
+                text=greeting_text,
+                voice_name="en-US-Emma2:DragonHDLatestNeural"
+            )
+
+            # Play the greeting
+            self.logger.info(f"Playing greeting to call {call_connection_id}")
+            play_result = call_connection.play_media_to_all(play_source)
+            self.logger.info(f"Play media result: {play_result}")
+
+            self.logger.info(f"✅ ACS greeting sent for call {call_connection_id}")
+
+        except Exception as e:
+            self.logger.error(f"Error sending ACS greeting: {str(e)}", exc_info=True)
 
     async def _trigger_initial_response(self, call_connection_id: str):
         """Trigger initial response from Voice Live to start conversation"""
@@ -321,14 +357,14 @@ class AudioStreamingService:
     async def _send_audio_to_call(self, call_connection_id: str, audio_data: bytes):
         """Send audio data back to the ACS call through WebSocket"""
         try:
-            self.logger.info(f"🎯 _send_audio_to_call called for call {call_connection_id}, audio length: {len(audio_data)}")
+            self.logger.info(f"_send_audio_to_call called for call {call_connection_id}, audio length: {len(audio_data)}")
 
             if call_connection_id not in self.active_streams:
                 self.logger.error(f"🎯 Call {call_connection_id} not found in active_streams")
                 return
 
             stream_info = self.active_streams[call_connection_id]
-            self.logger.info(f"🎯 Stream info for call {call_connection_id}: streaming_active={stream_info.get('streaming_active')}")
+            self.logger.info(f"Stream info for call {call_connection_id}: streaming_active={stream_info.get('streaming_active')}")
 
             if not stream_info.get("streaming_active"):
                 self.logger.warning(f"🎯 Streaming not active for call {call_connection_id}")
@@ -336,13 +372,13 @@ class AudioStreamingService:
 
             # Get the WebSocket connection for this call
             websocket_connection = stream_info.get("websocket_connection")
-            self.logger.info(f"🎯 WebSocket connection status for call {call_connection_id}: exists={websocket_connection is not None}, closed={websocket_connection.closed if websocket_connection else 'N/A'}")
+            self.logger.info(f"WebSocket connection status for call {call_connection_id}: exists={websocket_connection is not None}, closed={websocket_connection.closed if websocket_connection else 'N/A'}")
 
             if websocket_connection and not websocket_connection.closed:
                 # Convert audio data to base64 format expected by ACS
                 import base64
                 audio_base64 = base64.b64encode(audio_data).decode("utf-8")
-                self.logger.info(f"🎯 Encoded audio to base64, length: {len(audio_base64)} for call {call_connection_id}")
+                self.logger.info(f"Encoded audio to base64, length: {len(audio_base64)} for call {call_connection_id}")
 
                 # Create the JSON message format for ACS bidirectional streaming with explicit format
                 outbound_message = {
@@ -359,20 +395,51 @@ class AudioStreamingService:
                 # Send the audio data back to ACS through WebSocket
                 import json
                 message_json = json.dumps(outbound_message)
-                self.logger.info(f"🎯 Sending WebSocket message, JSON length: {len(message_json)} for call {call_connection_id}")
+                self.logger.info(f"Sending WebSocket message, JSON length: {len(message_json)} for call {call_connection_id}")
 
                 await websocket_connection.send(message_json)
-                self.logger.info(f"🎯 Successfully sent {len(audio_data)} bytes of audio back to call {call_connection_id}")
+                self.logger.info(f"Successfully sent {len(audio_data)} bytes of audio back to call {call_connection_id}")
             else:
                 if not websocket_connection:
-                    self.logger.error(f"🎯 No WebSocket connection found for call {call_connection_id}")
+                    self.logger.info(f"No WebSocket connection - using direct ACS audio playback for call {call_connection_id}")
+                    # Fallback: Use ACS direct audio playback when WebSocket is not available
+                    await self._send_audio_via_acs_direct(call_connection_id, audio_data)
                 else:
-                    self.logger.error(f"🎯 WebSocket connection is closed for call {call_connection_id}")
+                    self.logger.error(f"WebSocket connection is closed for call {call_connection_id}")
 
         except Exception as e:
-            self.logger.error(f"🎯 Error sending audio to call {call_connection_id}: {e}")
+            self.logger.error(f"Error sending audio to call {call_connection_id}: {e}")
             import traceback
-            self.logger.error(f"🎯 Full traceback: {traceback.format_exc()}")
+            self.logger.error(f"Full traceback: {traceback.format_exc()}")
+
+    async def _send_audio_via_acs_direct(self, call_connection_id: str, audio_data: bytes):
+        """Send audio directly via ACS when WebSocket is not available"""
+        try:
+            # For direct Voice Live integration without WebSocket streaming,
+            # we'll buffer the audio and use text-to-speech as a fallback
+            # This is because real-time audio streaming requires WebSocket connections
+
+            self.logger.info(f"Direct ACS audio playback not fully implemented - buffering audio for call {call_connection_id}")
+
+            # Buffer audio data for potential future playback
+            if not hasattr(self, 'audio_buffer'):
+                self.audio_buffer = {}
+
+            if call_connection_id not in self.audio_buffer:
+                self.audio_buffer[call_connection_id] = []
+
+            self.audio_buffer[call_connection_id].append(audio_data)
+
+            # For now, we'll rely on the initial greeting from _send_voice_live_greeting
+            # In a full implementation, you would need to:
+            # 1. Convert audio chunks to a playable format
+            # 2. Use ACS streaming audio APIs
+            # 3. Handle real-time audio buffering and playback
+
+            self.logger.info(f"Buffered {len(audio_data)} bytes of audio for call {call_connection_id}")
+
+        except Exception as e:
+            self.logger.error(f"Error in direct ACS audio playback for call {call_connection_id}: {e}")
 
     async def stop_audio_playback(self, call_connection_id: str):
         """Stop audio playback in the ACS call"""

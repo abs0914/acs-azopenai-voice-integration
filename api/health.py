@@ -20,9 +20,27 @@ async def hello():
 async def health_check():
     """Health check endpoint for Azure App Service"""
     return Response(
-        response="Healthy", 
-        status=200, 
+        response="Healthy",
+        status=200,
         headers={"Content-Type": "text/plain"}
+    )
+
+@app.route("/api/health")
+async def api_health_check():
+    """API health check endpoint"""
+    return Response(
+        response="Healthy",
+        status=200,
+        headers={"Content-Type": "text/plain"}
+    )
+
+@app.route("/api/testVoiceLive")
+async def test_voice_live():
+    """Basic Voice Live test endpoint"""
+    return Response(
+        response='{"status": "error", "message": "Voice Live test not available in health check mode"}',
+        status=503,
+        headers={"Content-Type": "application/json"}
     )
 
 @app.route("/robots933456.txt")

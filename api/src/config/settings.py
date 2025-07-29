@@ -24,6 +24,8 @@ class Config:
     AZURE_VOICE_LIVE_API_KEY = os.getenv("AZURE_VOICE_LIVE_API_KEY")
     AZURE_VOICE_LIVE_REGION = os.getenv("AZURE_VOICE_LIVE_REGION", "eastus2")
     AZURE_VOICE_LIVE_MODEL = os.getenv("AZURE_VOICE_LIVE_MODEL", "gpt-4o")
+    AZURE_VOICE_LIVE_DEPLOYMENT = os.getenv("AZURE_VOICE_LIVE_DEPLOYMENT", "gpt-4o-realtime-preview")
+    VIDA_VOICE_BOT_ASSISTANT_ID = os.getenv("VIDA_VOICE_BOT_ASSISTANT_ID")
     
     # Application Settings
     CALLBACK_URI_HOST = os.getenv("CALLBACK_URI_HOST")
