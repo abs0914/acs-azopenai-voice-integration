@@ -105,10 +105,13 @@ class VoiceLiveCallHandler:
             return True
 
         except asyncio.TimeoutError:
-            logger.error("❌ Voice Live connection timeout")
+            logger.error("❌ Voice Live connection timeout - Azure AI Voice Live service may be unavailable")
+            logger.error(f"❌ Attempted connection to: {ws_url}")
             return False
         except Exception as e:
             logger.error(f"❌ Failed to connect to Voice Live: {e}")
+            logger.error(f"❌ Connection URL: {ws_url}")
+            logger.error(f"❌ API Key present: {'Yes' if self.api_key else 'No'}")
             logger.error(traceback.format_exc())
             return False
     
@@ -527,7 +530,9 @@ async def answer_call_with_voice_live(incoming_call_context: str, correlation_id
             logger.info("🎤 Voice Live integration ready!")
             # Don't send greeting here - wait for CallConnected event
         else:
-            logger.error("❌ Failed to connect to Voice Live")
+            logger.error("❌ Failed to connect to Voice Live - falling back to ACS greeting")
+            # Fallback to ACS greeting when Voice Live fails
+            await send_simple_acs_greeting(call_connection_id)
 
     except Exception as e:
         logger.error(f"❌ Error answering call: {e}")
